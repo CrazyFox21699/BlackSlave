@@ -200,6 +200,7 @@ Config:
 ```yaml
 urgent:
   enabled: true
+  external_file: "C:/Users/HuyTQ136/FPT Software Company Limited/OnedriveSharing - TMCSYSAUTOSA1/No2.LowVoltagePowerSupplySystem/00_Share/02_FromFPT/01_Project_Management/02_Project_Plan/urgent_tasks.csv"
   impact_window_days: 5
   keywords:
     - urgent
@@ -213,6 +214,12 @@ urgent:
     - firefighting
     - production issue
     - customer urgent
+```
+
+For local testing inside the repo, this can stay as:
+
+```yaml
+external_file: "./urgent_tasks.csv"
 ```
 
 What it reports:
@@ -230,6 +237,46 @@ Urgent impact / OT
 - Tiger: urgent 5.0 MH, today total 12.0/8.0 MH, OT 4.0 MH, affected tasks 2
   - may affect Row 21: M1/System spec, due in 1d, rem 4.0 MH
 ```
+
+### Urgent Task CSV Format
+
+The tool can read urgent tasks from:
+
+```text
+urgent_tasks.csv
+```
+
+Recommended columns:
+
+```csv
+id,date,pic,estimate_mh,item,due,reason,status,source
+U-001,2026-05-23,Cat,3,Support customer issue ABC,today,Customer escalation,open,teams
+U-002,2026-05-23,Tiger,2,Hotfix build issue,today,Integration blocked,open,teams
+```
+
+Required fields:
+
+```text
+pic
+estimate_mh
+item
+```
+
+Useful optional fields:
+
+```text
+id,date,due,reason,status,source
+```
+
+Status handling:
+
+- `open` is included.
+- blank status is included.
+- `done`, `cancelled`, `canceled`, `closed` are ignored.
+- rows dated today are included.
+- rows with blank date are included.
+
+Keep this file in a OneDrive-synced folder if Power Automate will append rows to it.
 
 ## Power Automate Setup For Teams
 
@@ -336,6 +383,120 @@ OAuth authorization scheme required
 
 you copied the wrong URL. Copy `HTTP POST URL` from the trigger, not the browser URL. The usable URL must include `sig=`.
 
+## Power Automate For Urgent Task Capture
+
+This is separate from the report-sending webhook above.
+
+Goal:
+
+```text
+User posts urgent command in Teams
+-> Power Automate appends one row to urgent_tasks.csv
+-> You run RUN_URGENT_IMPACT.bat when you want an update
+-> Tool reads tracking sheet + urgent_tasks.csv
+-> Tool posts short impact/OT update to Teams
+```
+
+Suggested user command format:
+
+```text
+urgent Cat 3h support customer issue ABC
+urgent Tiger 2h hotfix integration build
+urgent Lion 1.5h clarify customer question
+```
+
+Recommended CSV target:
+
+```text
+C:\Users\HuyTQ136\FPT Software Company Limited\...\02_Project_Plan\urgent_tasks.csv
+```
+
+### Manual First
+
+Before automating Power Automate append, create/edit `urgent_tasks.csv` manually:
+
+```csv
+id,date,pic,estimate_mh,item,due,reason,status,source
+U-001,2026-05-23,Cat,3,Support customer issue ABC,today,Customer escalation,open,manual
+```
+
+Then run:
+
+```powershell
+python main.py --config config.yaml --urgent-impact-only --dry-run --no-ollama
+```
+
+If output looks correct, run without `--dry-run` to send Teams:
+
+```powershell
+python main.py --config config.yaml --urgent-impact-only --no-ollama
+```
+
+### Power Automate Append Idea
+
+Use a Teams trigger that your tenant allows, for example:
+
+```text
+When a new message is added in a chat or channel
+```
+
+or a Teams workflow trigger for selected chat/channel messages.
+
+Flow shape:
+
+```text
+Trigger: new Teams message
+Condition: message starts with "urgent "
+Parse: urgent <PIC> <MH>h <description>
+Action: append row to urgent_tasks.csv or an Excel table
+```
+
+The local Python tool does not need Graph API. Power Automate only captures the urgent command into a small file.
+
+Simple parsed fields:
+
+```text
+date = today
+pic = second token
+estimate_mh = number before "h"
+item = remaining text
+due = today
+status = open
+source = teams
+```
+
+If parsing in Power Automate is too annoying, use a stricter command:
+
+```text
+urgent|Cat|3|support customer issue ABC
+urgent|Tiger|2|hotfix integration build
+```
+
+Then split by `|` and append columns directly.
+
+### Recommended Low-Effort Workflow
+
+1. User posts urgent command in Teams.
+2. Power Automate appends row to `urgent_tasks.csv`.
+3. When PM/Huy wants update, double-click:
+
+```text
+RUN_URGENT_IMPACT.bat
+```
+
+4. Tool posts short impact:
+
+```text
+Urgent Impact Update - 2026-05-23
+
+Cat: urgent 3.0h + planned 5.6h = 8.6/8h -> OT 0.6h
+May affect:
+- Row 34: Code-action, due in 2d, rem 2.8h
+Decision: reassign/defer affected tasks or accept OT.
+```
+
+This avoids polling every 15 minutes and keeps the tool on-demand.
+
 ## Running The Tool
 
 Activate venv:
@@ -372,6 +533,30 @@ RUN_DAILY_WITH_OLLAMA.bat
 ```
 
 The runner starts Ollama if possible, waits for the API, runs the tool, writes reports, and sends Teams if enabled.
+
+## On-Demand Urgent Impact Update
+
+Use this when urgent work appears after the 08:00 report and you want a short impact/OT update.
+
+Dry-run:
+
+```powershell
+python main.py --config config.yaml --urgent-impact-only --dry-run --no-ollama
+```
+
+Send Teams:
+
+```powershell
+python main.py --config config.yaml --urgent-impact-only --no-ollama
+```
+
+Double-click:
+
+```text
+RUN_URGENT_IMPACT.bat
+```
+
+This mode still validates OneDrive sync and analyzes a temp copy of the tracking Excel. It does not keep a terminal running.
 
 ## Ask A Member Question
 

@@ -33,6 +33,7 @@ capacity:
 
 urgent:
   enabled: true
+  external_file: "./urgent_tasks.csv"
   impact_window_days: 5
   keywords:
     - urgent

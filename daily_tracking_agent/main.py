@@ -20,7 +20,7 @@ from modules.report_builder import build_and_save_reports
 from modules.rule_checker import check_rules
 from modules.sync_guard import SyncValidationError, wait_for_synced_file
 from modules.teams_sender import send_teams_message
-from modules.urgent_impact_analyzer import analyze_urgent_impact
+from modules.urgent_impact_analyzer import analyze_urgent_impact, build_urgent_short_summary
 from modules.workload_analyzer import analyze_workload
 
 
@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ask", help="Ask a local tracking question, for example: 'Lion hôm nay làm gì?'")
     parser.add_argument("--pic", action="append", default=[], help="Filter question/report to one PIC. Can be repeated.")
     parser.add_argument("--send-answer-to-teams", action="store_true", help="Send --ask/--pic answer to Teams webhook.")
+    parser.add_argument("--urgent-impact-only", action="store_true", help="Send/print short urgent impact update instead of full report.")
     return parser.parse_args()
 
 
@@ -101,6 +102,15 @@ def main() -> int:
         if args.send_answer_to_teams:
             send_teams_message(answer, config.get("teams", {}), logger, force_disabled=args.no_teams or args.dry_run)
         logger.info("Answered local tracking question")
+        return 0
+
+    if args.urgent_impact_only:
+        summary = build_urgent_short_summary(result["urgent_impact"], today.date())
+        print(summary)
+        answer_path = _save_query_answer(summary, config.get("report", {}), today)
+        print(f"\nSaved urgent impact: {answer_path}")
+        send_teams_message(summary, config.get("teams", {}), logger, force_disabled=args.no_teams or args.dry_run)
+        logger.info("Urgent impact update completed")
         return 0
 
     try:
@@ -206,6 +216,9 @@ def _resolve_relative_paths(config: dict, base_dir: Path) -> None:
         value = config.get(section, {}).get(key)
         if value and not Path(value).is_absolute():
             config[section][key] = str((base_dir / value).resolve())
+    urgent_file = config.get("urgent", {}).get("external_file")
+    if urgent_file and not Path(urgent_file).is_absolute():
+        config["urgent"]["external_file"] = str((base_dir / urgent_file).resolve())
 
 
 def _save_query_answer(answer: str, report_config: dict, today: datetime) -> Path:
