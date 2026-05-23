@@ -1,0 +1,6 @@
+pandas>=2.1
+openpyxl>=3.1
+requests>=2.31
+pydantic>=2.5
+PyYAML>=6.0
+tabulate>=0.9

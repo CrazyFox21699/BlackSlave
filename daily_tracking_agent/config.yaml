@@ -1,0 +1,94 @@
+sync:
+  folder_path: "./sample_data"
+  tracking_file: "daily_tracking_master.xlsx"
+  wait_sync_seconds: 90
+  retry_interval_seconds: 5
+  max_source_file_age_hours: 24
+  fail_on_stale_source: false
+
+excel:
+  sheet_name: null
+  header_search_rows: 30
+  required_columns:
+    - PIC
+    - Milestone
+    - Start date (Plan)
+    - End date (Plan)
+    - Est (MH) OR SP
+    - Target
+    - Current Progress
+    - Previous value
+    - Delta
+    - Note
+
+user:
+  my_pic_names:
+    - "Huy"
+    - "Huy Truong"
+    - "Truong Huy"
+
+capacity:
+  daily_mh: 8
+  weekly_mh: 40
+
+temp:
+  folder: "./temp"
+
+report:
+  output_folder: "./reports"
+  max_teams_issues: 3
+  max_my_focus_items: 3
+  max_team_actions: 5
+  max_full_report_issues: 30
+  include_raw_issue_table: false
+  write_excel: true
+
+ollama:
+  enabled: false
+  base_url: "http://localhost:11434"
+  model: "qwen2.5:7b"
+  timeout_seconds: 60
+  max_rows_for_ai_review: 20
+
+teams:
+  enabled: false
+  webhook_url: "PASTE_POWER_AUTOMATE_OR_TEAMS_WORKFLOW_WEBHOOK_URL"
+  send_failure_notification: true
+
+estimate_baseline:
+  HARA:
+    min_mh: 4
+    max_mh: 24
+    keywords: ["HARA", "hazard", "ASIL", "safety goal"]
+  FTA:
+    min_mh: 4
+    max_mh: 32
+    keywords: ["FTA", "fault tree"]
+  FMEA:
+    min_mh: 4
+    max_mh: 32
+    keywords: ["FMEA", "failure mode"]
+  DFA:
+    min_mh: 4
+    max_mh: 24
+    keywords: ["DFA", "dependent failure"]
+  SafetyConcept:
+    min_mh: 8
+    max_mh: 40
+    keywords: ["FSC", "TSC", "safety concept", "safety mechanism"]
+  SystemSpec:
+    min_mh: 4
+    max_mh: 40
+    keywords: ["system spec", "SYS", "requirement", "SRS", "SPEC"]
+  Architecture:
+    min_mh: 8
+    max_mh: 40
+    keywords: ["architecture", "design", "interface"]
+  Code:
+    min_mh: 4
+    max_mh: 40
+    keywords: ["code", "implementation"]
+  MinorUpdate:
+    min_mh: 0.5
+    max_mh: 4
+    keywords: ["minor", "typo", "format", "small fix", "comment fix"]
