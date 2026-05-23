@@ -31,6 +31,22 @@ capacity:
   daily_mh: 8
   weekly_mh: 40
 
+urgent:
+  enabled: true
+  impact_window_days: 5
+  keywords:
+    - urgent
+    - hotfix
+    - ad-hoc
+    - adhoc
+    - unplanned
+    - escalation
+    - support
+    - interrupt
+    - firefighting
+    - production issue
+    - customer urgent
+
 temp:
   folder: "./temp"
 

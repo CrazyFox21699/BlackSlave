@@ -28,6 +28,7 @@ def build_teams_summary(
     groups: dict[str, Any],
     workload: pd.DataFrame,
     report_config: dict,
+    urgent_impact: dict[str, Any] | None = None,
 ) -> str:
     high = [i for i in issues if i.severity in {"Critical", "High"}]
     due_overdue = prioritized_df[(prioritized_df["CurrentProgress"] < 100) & (prioritized_df["DaysToDue"].fillna(999) <= 0)]
@@ -39,6 +40,7 @@ def build_teams_summary(
     replan = _replan_needed(issues, prioritized_df, workload, max_items)
     blockers = _blockers(issues, max_items)
     data_fix = _data_fix(issues, max_items)
+    urgent_lines = _urgent_impact_lines(urgent_impact, max_items)
     confidence, confidence_reason = _report_confidence(issues)
     overloaded = _overloaded_pics(workload)
 
@@ -57,6 +59,9 @@ def build_teams_summary(
     lines.append("")
     lines.append("Re-plan needed")
     lines.extend(replan or ["- No urgent re-plan item found."])
+    lines.append("")
+    lines.append("Urgent impact / OT")
+    lines.extend(urgent_lines or ["- No urgent/unplanned work detected from tracking keywords."])
     lines.append("")
     lines.append("Blockers")
     lines.extend(blockers or ["- No blocker found."])
@@ -78,6 +83,7 @@ def build_and_save_reports(
     groups: dict[str, Any],
     workload: pd.DataFrame,
     report_config: dict,
+    urgent_impact: dict[str, Any] | None = None,
 ) -> tuple[Path, Path | None, str]:
     output = Path(report_config.get("output_folder", "./reports")).expanduser()
     output.mkdir(parents=True, exist_ok=True)
@@ -87,9 +93,9 @@ def build_and_save_reports(
     context.report_markdown_path = md_path
     context.report_excel_path = xlsx_path
 
-    teams_summary = build_teams_summary(context, issues, prioritized_df, groups, workload, report_config)
+    teams_summary = build_teams_summary(context, issues, prioritized_df, groups, workload, report_config, urgent_impact)
     issues_df = issue_frame(issues)
-    md = _full_markdown(context, issues_df, prioritized_df, groups, workload, teams_summary, report_config)
+    md = _full_markdown(context, issues_df, prioritized_df, groups, workload, teams_summary, report_config, urgent_impact)
     md_path.write_text(md, encoding="utf-8")
 
     excel_path: Path | None = None
@@ -100,13 +106,16 @@ def build_and_save_reports(
             groups["team_actions"].to_excel(writer, index=False, sheet_name="TeamActions")
             issues_df.to_excel(writer, index=False, sheet_name="Issues")
             workload.to_excel(writer, index=False, sheet_name="WorkloadByPIC")
+            if urgent_impact and not urgent_impact.get("pic_summary", pd.DataFrame()).empty:
+                urgent_impact["pic_summary"].to_excel(writer, index=False, sheet_name="UrgentImpact")
+                urgent_impact["affected_tasks"].to_excel(writer, index=False, sheet_name="UrgentAffected")
             issues_df[issues_df["category"].eq("Data Quality")].to_excel(writer, index=False, sheet_name="DataQuality")
             prioritized_df.to_excel(writer, index=False, sheet_name="RawNormalizedData")
         excel_path = xlsx_path
     return md_path, excel_path, teams_summary
 
 
-def _full_markdown(context: AnalysisContext, issues_df: pd.DataFrame, df: pd.DataFrame, groups: dict[str, Any], workload: pd.DataFrame, teams_summary: str, report_config: dict) -> str:
+def _full_markdown(context: AnalysisContext, issues_df: pd.DataFrame, df: pd.DataFrame, groups: dict[str, Any], workload: pd.DataFrame, teams_summary: str, report_config: dict, urgent_impact: dict[str, Any] | None = None) -> str:
     max_issues = int(report_config.get("max_full_report_issues", 30))
     sections = [
         f"# Daily Work Control Report - {context.today.strftime('%Y-%m-%d')}",
@@ -116,6 +125,8 @@ def _full_markdown(context: AnalysisContext, issues_df: pd.DataFrame, df: pd.Dat
         "\n".join(member_actions_for_teams(df, limit_pics=20, limit_tasks_per_pic=3)) or "No urgent member action found.",
         "## Re-plan Needed",
         "\n".join(_replan_needed_from_frames(issues_df, df, workload, 30)) or "No urgent re-plan item found.",
+        "## Urgent Impact / OT",
+        _urgent_impact_md(urgent_impact),
         "## Blockers",
         "\n".join(_blockers_from_frame(issues_df, 30)) or "No blocker found.",
         "## Data Quality Must Fix",
@@ -223,6 +234,60 @@ def _workload_heatmap_md(workload: pd.DataFrame) -> str:
     rows["DailyStatus"] = rows["RemainingMHToday"].apply(lambda v: "OVER" if float(v or 0) > 8 else "OK")
     rows["WeeklyStatus"] = rows["RemainingMHWeek"].apply(lambda v: "OVER" if float(v or 0) > 40 else "OK")
     return _df_md(rows, ["PIC", "ActiveTasks", "DueToday", "Overdue", "RemainingMHToday", "DailyStatus", "RemainingMHWeek", "WeeklyStatus"])
+
+
+def _urgent_impact_lines(urgent_impact: dict[str, Any] | None, limit: int) -> list[str]:
+    if not urgent_impact:
+        return []
+    summary = urgent_impact.get("pic_summary", pd.DataFrame())
+    affected = urgent_impact.get("affected_tasks", pd.DataFrame())
+    if summary is None or summary.empty:
+        return []
+    lines: list[str] = []
+    for _, row in summary.head(limit).iterrows():
+        lines.append(
+            f"- {row.get('PIC')}: urgent {float(row.get('UrgentRemainingMH', 0)):.1f} MH, "
+            f"today total {float(row.get('TodayTotalMH', 0)):.1f}/{float(row.get('DailyCapacityMH', 8)):.1f} MH, "
+            f"OT {float(row.get('EstimatedOTMH', 0)):.1f} MH, affected tasks {int(row.get('AffectedTaskCount', 0))}"
+        )
+        if affected is not None and not affected.empty:
+            top = affected[affected["PIC"].astype(str).eq(str(row.get("PIC")))].head(2)
+            for _, item in top.iterrows():
+                lines.append(
+                    f"  - may affect Row {item.get('AffectedRowID')}: {item.get('AffectedMilestone', '')}/{item.get('AffectedItem', '')}, "
+                    f"due {_format_days_to_due(item.get('DaysToDue'))}, rem {float(item.get('RemainingMH', 0)):.1f} MH"
+                )
+    return lines[: max(limit * 3, limit)]
+
+
+def _urgent_impact_md(urgent_impact: dict[str, Any] | None) -> str:
+    if not urgent_impact:
+        return "No urgent/unplanned work detected from tracking keywords."
+    summary = urgent_impact.get("pic_summary", pd.DataFrame())
+    urgent_tasks = urgent_impact.get("urgent_tasks", pd.DataFrame())
+    affected = urgent_impact.get("affected_tasks", pd.DataFrame())
+    if summary is None or summary.empty:
+        return "No urgent/unplanned work detected from tracking keywords."
+    sections = [
+        "### Summary",
+        _df_md(summary, ["PIC", "UrgentTasks", "UrgentRemainingMH", "TodayTotalMH", "DailyCapacityMH", "EstimatedOTMH", "AffectedTaskCount"]),
+        "### Urgent / Unplanned Tasks",
+        _df_md(urgent_tasks, ["RowID", "PIC", "Milestone", "Item", "DaysToDue", "RemainingMH", "CurrentProgress", "PriorityScore", "Note"]),
+        "### Potentially Affected Planned Tasks",
+        _df_md(affected, ["PIC", "AffectedRowID", "AffectedMilestone", "AffectedItem", "DaysToDue", "RemainingMH", "PriorityScore", "EstimatedOTMH"]),
+    ]
+    return "\n\n".join(sections)
+
+
+def _format_days_to_due(value: object) -> str:
+    if pd.isna(value):
+        return "invalid date"
+    days = int(value)
+    if days < 0:
+        return f"overdue {abs(days)}d"
+    if days == 0:
+        return "today"
+    return f"in {days}d"
 
 
 def _overloaded_pics(workload: pd.DataFrame) -> pd.DataFrame:

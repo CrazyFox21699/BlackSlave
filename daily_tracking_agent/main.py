@@ -20,6 +20,7 @@ from modules.report_builder import build_and_save_reports
 from modules.rule_checker import check_rules
 from modules.sync_guard import SyncValidationError, wait_for_synced_file
 from modules.teams_sender import send_teams_message
+from modules.urgent_impact_analyzer import analyze_urgent_impact
 from modules.workload_analyzer import analyze_workload
 
 
@@ -110,6 +111,7 @@ def main() -> int:
             result["groups"],
             result["workload"],
             config.get("report", {}),
+            result.get("urgent_impact"),
         )
         logger.info("Reports generated: markdown=%s excel=%s", md_path, xlsx_path)
         send_teams_message(teams_summary, config.get("teams", {}), logger, force_disabled=args.no_teams or args.dry_run)
@@ -160,12 +162,26 @@ def run_analysis(config: dict, today: datetime, logger) -> dict:
         config.get("user", {}).get("my_pic_names", []),
         today.date(),
     )
+    urgent_impact, urgent_issues = analyze_urgent_impact(
+        prioritized_df,
+        config.get("capacity", {}),
+        config.get("urgent", {}),
+        today.date(),
+    )
+    issues.extend(urgent_issues)
+    prioritized_df, groups = calculate_priorities(
+        prioritized_df.drop(columns=["PriorityScore", "PriorityClass"], errors="ignore"),
+        issues,
+        config.get("user", {}).get("my_pic_names", []),
+        today.date(),
+    )
     return {
         "context": context,
         "issues": issues,
         "prioritized_df": prioritized_df,
         "groups": groups,
         "workload": workload,
+        "urgent_impact": urgent_impact,
     }
 
 

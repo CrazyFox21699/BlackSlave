@@ -7,6 +7,7 @@ Local-first Python tool for daily system/software task tracking. It reads only a
 - Validates OneDrive/local file readiness before reading Excel.
 - Copies the Excel file to `temp/` and analyzes only the temp copy.
 - Checks schedule, progress, delta, estimate sanity, overload, blockers, and data quality.
+- Detects urgent/unplanned work and estimates affected planned tasks plus OT hours.
 - Generates Markdown and Excel reports.
 - Optionally uses local Ollama only.
 - Sends Teams summary through Power Automate.
@@ -43,6 +44,7 @@ modules/report_builder.py                Teams/full report structure
 modules/query_engine.py                  Member report / Q&A structure
 modules/ollama_reviewer.py               Ollama prompts
 modules/rule_checker.py                  Tracking sanity rules
+modules/urgent_impact_analyzer.py        Urgent/unplanned impact and OT analyzer
 ```
 
 ## First-Time Machine Setup
@@ -187,6 +189,46 @@ For local testing without Teams:
 ```yaml
 teams:
   enabled: false
+```
+
+### Urgent / Unplanned Work Impact
+
+The tool can detect urgent work automatically from `Item`, `Target`, and `Note` text. No extra user input is required if the tracking sheet contains words such as `urgent`, `hotfix`, `support`, or `unplanned`.
+
+Config:
+
+```yaml
+urgent:
+  enabled: true
+  impact_window_days: 5
+  keywords:
+    - urgent
+    - hotfix
+    - ad-hoc
+    - adhoc
+    - unplanned
+    - escalation
+    - support
+    - interrupt
+    - firefighting
+    - production issue
+    - customer urgent
+```
+
+What it reports:
+
+- urgent/unplanned remaining MH by PIC,
+- total priority work today versus 8 MH/day capacity,
+- estimated OT hours,
+- planned tasks likely affected by urgent work,
+- suggested daily question for re-prioritization.
+
+Example:
+
+```text
+Urgent impact / OT
+- Tiger: urgent 5.0 MH, today total 12.0/8.0 MH, OT 4.0 MH, affected tasks 2
+  - may affect Row 21: M1/System spec, due in 1d, rem 4.0 MH
 ```
 
 ## Power Automate Setup For Teams
@@ -414,6 +456,7 @@ Teams summary includes:
 - Do today,
 - Member actions today,
 - Re-plan needed,
+- Urgent impact / OT,
 - Blockers,
 - Data fix,
 - Daily questions,
@@ -424,6 +467,7 @@ Full Markdown report includes:
 - Executive Summary,
 - Today Commitment,
 - Re-plan Needed,
+- Urgent Impact / OT,
 - Blockers,
 - Data Quality Must Fix,
 - Workload Heatmap,
@@ -501,6 +545,13 @@ Workload rules:
 
 ```text
 modules/workload_analyzer.py
+```
+
+Urgent/unplanned impact and OT calculation:
+
+```text
+modules/urgent_impact_analyzer.py
+config.yaml -> urgent
 ```
 
 Estimate baseline rules:
