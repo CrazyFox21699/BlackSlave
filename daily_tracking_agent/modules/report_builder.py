@@ -33,30 +33,36 @@ def build_teams_summary(
     due_overdue = prioritized_df[(prioritized_df["CurrentProgress"] < 100) & (prioritized_df["DaysToDue"].fillna(999) <= 0)]
     my_focus = groups["my_focus"].head(int(report_config.get("max_my_focus_items", 5)))
     max_items = int(report_config.get("max_teams_issues", 3))
-    estimate = [i for i in issues if i.category in {"Estimate", "Breakdown"}][:max_items]
-    dq = [i for i in issues if i.category == "Data Quality"][:max_items]
-    delay = [i for i in issues if i.category in {"Schedule", "Workload"} and i.severity in {"Critical", "High"}][:max_items]
+    dq = [i for i in issues if i.category == "Data Quality"]
     questions = _first_nonempty(groups.get("questions_pm", []) + groups.get("follow_member", []) + groups.get("cleanup", []), 3)
     source_time = context.source_last_modified.strftime("%H:%M %Y-%m-%d") if context.source_last_modified else "unknown"
+    replan = _replan_needed(issues, prioritized_df, workload, max_items)
+    blockers = _blockers(issues, max_items)
+    data_fix = _data_fix(issues, max_items)
+    confidence, confidence_reason = _report_confidence(issues)
+    overloaded = _overloaded_pics(workload)
 
     lines = [
         f"Daily Work Control - {context.today.strftime('%Y-%m-%d')}",
-        f"Rows {context.row_count} | High/Critical {len(high)} | My focus {len(groups['my_focus'])} | Due/overdue {len(due_overdue)}",
+        f"Health: Rows {context.row_count} | High/Critical {len(high)} | Data issues {len(dq)} | Overloaded PICs {len(overloaded)} | Confidence {confidence}",
         f"Source modified: {source_time}",
+        f"Confidence reason: {confidence_reason}",
         "",
-        "My focus",
+        "Do today",
     ]
     lines.extend(_task_lines(my_focus, int(report_config.get("max_my_focus_items", 3))) or ["- No active high-priority personal focus item found."])
-    lines.append("")
-    lines.append("Team risks")
-    lines.extend([f"- [{i.severity}] {i.pic or 'Unassigned'}: {i.issue_type} ({_shorten(i.evidence, 80)})" for i in delay] or ["- No major team delay risk found by rules."])
     lines.append("")
     lines.append("Member actions today")
     lines.extend(member_actions_for_teams(prioritized_df) or ["- No urgent member action found."])
     lines.append("")
-    lines.append("Estimate/data")
-    estimate_data = estimate + dq
-    lines.extend([f"- [{i.severity}] Row {i.row_id or '-'} {i.issue_type}: {_shorten(i.evidence, 90)}" for i in estimate_data[:max_items]] or ["- No major estimate/data issue found."])
+    lines.append("Re-plan needed")
+    lines.extend(replan or ["- No urgent re-plan item found."])
+    lines.append("")
+    lines.append("Blockers")
+    lines.extend(blockers or ["- No blocker found."])
+    lines.append("")
+    lines.append("Data fix")
+    lines.extend(data_fix or ["- No urgent data quality fix found."])
     lines.append("")
     lines.append("Daily questions")
     lines.extend([f"- {q}" for q in questions] or ["- Confirm top priorities, blockers, and recovery plans for due/overdue items."])
@@ -106,6 +112,16 @@ def _full_markdown(context: AnalysisContext, issues_df: pd.DataFrame, df: pd.Dat
         f"# Daily Work Control Report - {context.today.strftime('%Y-%m-%d')}",
         "## Executive Summary",
         teams_summary,
+        "## Today Commitment",
+        "\n".join(member_actions_for_teams(df, limit_pics=20, limit_tasks_per_pic=3)) or "No urgent member action found.",
+        "## Re-plan Needed",
+        "\n".join(_replan_needed_from_frames(issues_df, df, workload, 30)) or "No urgent re-plan item found.",
+        "## Blockers",
+        "\n".join(_blockers_from_frame(issues_df, 30)) or "No blocker found.",
+        "## Data Quality Must Fix",
+        "\n".join(_data_fix_from_frame(issues_df, 30)) or "No urgent data quality fix found.",
+        "## Workload Heatmap",
+        _workload_heatmap_md(workload),
         "## My Focus Today",
         _df_md(groups["my_focus"].head(20), ["RowID", "PIC", "Milestone", "Item", "DaysToDue", "RemainingMH", "CurrentProgress", "PriorityScore", "PriorityClass"]),
         "## Team Actions by PIC",
@@ -148,6 +164,83 @@ def _task_lines(df: pd.DataFrame, limit: int) -> list[str]:
     return lines
 
 
+def _replan_needed(issues: list[Issue], df: pd.DataFrame, workload: pd.DataFrame, limit: int) -> list[str]:
+    issues_df = issue_frame(issues)
+    return _replan_needed_from_frames(issues_df, df, workload, limit)
+
+
+def _replan_needed_from_frames(issues_df: pd.DataFrame, df: pd.DataFrame, workload: pd.DataFrame, limit: int) -> list[str]:
+    lines: list[str] = []
+    for _, row in _overloaded_pics(workload).head(limit).iterrows():
+        lines.append(f"- {row.get('PIC')}: workload {float(row.get('RemainingMHToday', 0)):.1f} MH today, reassign/split/re-prioritize.")
+    if not issues_df.empty:
+        replan_types = {
+            "Overdue", "Due today not completed", "Unrealistic daily workload",
+            "Estimate may be over-aggregated", "Task too large", "Unclear task scope",
+            "Large task at delay risk",
+        }
+        part = issues_df[issues_df["issue_type"].isin(replan_types)].head(limit)
+        for _, issue in part.iterrows():
+            lines.append(f"- Row {_cell(issue, 'row_id')}: [{_cell(issue, 'severity')}] {_cell(issue, 'pic') or 'Unassigned'} {_cell(issue, 'issue_type')} - {_shorten(_cell(issue, 'evidence'), 100)}")
+    return _dedupe_lines(lines)[:limit]
+
+
+def _blockers(issues: list[Issue], limit: int) -> list[str]:
+    return _blockers_from_frame(issue_frame(issues), limit)
+
+
+def _blockers_from_frame(issues_df: pd.DataFrame, limit: int) -> list[str]:
+    if issues_df.empty:
+        return []
+    mask = (
+        issues_df["issue_type"].astype(str).str.contains("Blocked|dependency", case=False, na=False)
+        | issues_df["evidence"].astype(str).str.contains("waiting|blocked|pending|TBD|confirm|clarify", case=False, na=False)
+    )
+    return [
+        f"- Row {_cell(row, 'row_id')}: [{_cell(row, 'severity')}] {_cell(row, 'pic') or 'Unassigned'} {_cell(row, 'issue_type')} - {_shorten(_cell(row, 'evidence'), 110)}"
+        for _, row in issues_df[mask].head(limit).iterrows()
+    ]
+
+
+def _data_fix(issues: list[Issue], limit: int) -> list[str]:
+    return _data_fix_from_frame(issue_frame(issues), limit)
+
+
+def _data_fix_from_frame(issues_df: pd.DataFrame, limit: int) -> list[str]:
+    if issues_df.empty:
+        return []
+    part = issues_df[issues_df["category"].isin(["Data Quality", "Sync"])].head(limit)
+    return [
+        f"- Row {_cell(row, 'row_id')}: [{_cell(row, 'severity')}] {_cell(row, 'issue_type')} - {_shorten(_cell(row, 'evidence'), 110)}"
+        for _, row in part.iterrows()
+    ]
+
+
+def _workload_heatmap_md(workload: pd.DataFrame) -> str:
+    if workload is None or workload.empty:
+        return "No workload data."
+    rows = workload.copy()
+    rows["DailyStatus"] = rows["RemainingMHToday"].apply(lambda v: "OVER" if float(v or 0) > 8 else "OK")
+    rows["WeeklyStatus"] = rows["RemainingMHWeek"].apply(lambda v: "OVER" if float(v or 0) > 40 else "OK")
+    return _df_md(rows, ["PIC", "ActiveTasks", "DueToday", "Overdue", "RemainingMHToday", "DailyStatus", "RemainingMHWeek", "WeeklyStatus"])
+
+
+def _overloaded_pics(workload: pd.DataFrame) -> pd.DataFrame:
+    if workload is None or workload.empty or "RemainingMHToday" not in workload.columns:
+        return pd.DataFrame()
+    return workload[workload["RemainingMHToday"].fillna(0) > 8].sort_values("RemainingMHToday", ascending=False)
+
+
+def _report_confidence(issues: list[Issue]) -> tuple[str, str]:
+    data_quality_count = len([i for i in issues if i.category in {"Data Quality", "Sync"}])
+    critical_quality = len([i for i in issues if i.category in {"Data Quality", "Sync"} and i.severity in {"Critical", "High"}])
+    if critical_quality >= 3 or data_quality_count >= 8:
+        return "Low", f"{data_quality_count} data/sync issues, {critical_quality} high/critical"
+    if critical_quality or data_quality_count >= 3:
+        return "Medium", f"{data_quality_count} data/sync issues"
+    return "High", "no major data quality issue found"
+
+
 def _issue_md(issues_df: pd.DataFrame, categories: list[str], limit: int = 30) -> str:
     if issues_df.empty:
         return "No issues."
@@ -171,6 +264,21 @@ def _shorten(text: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 3].rstrip() + "..."
+
+
+def _cell(row: pd.Series, column: str) -> str:
+    value = row.get(column, "")
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
+def _dedupe_lines(lines: list[str]) -> list[str]:
+    result: list[str] = []
+    for line in lines:
+        if line and line not in result:
+            result.append(line)
+    return result
 
 
 def _first_nonempty(values: list[str], limit: int) -> list[str]:
