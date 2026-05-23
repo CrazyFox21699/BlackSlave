@@ -45,7 +45,7 @@ def review_with_ollama(df: pd.DataFrame, config: dict, logger: logging.Logger) -
             "priority_score": row.get("PriorityScore", 0),
         }
         prompt = (
-            "You are a project tracking reviewer for automotive software and functional safety work.\n"
+            "You are a project tracking reviewer for system/software task planning.\n"
             "Analyze the task below and detect:\n"
             "- unrealistic estimate\n- schedule inconsistency\n- progress inconsistency\n"
             "- missing information\n- project risk\n"
@@ -94,7 +94,7 @@ def answer_question_with_ollama(question: str, local_context: str, config: dict,
     model = config.get("model", "qwen2.5:7b")
     timeout = int(config.get("timeout_seconds", 60))
     prompt = (
-        "You are a local automotive software project tracking assistant.\n"
+        "You are a local system/software project tracking assistant.\n"
         "Use only the local context below. Do not invent rows or dates.\n"
         "Answer in concise Vietnamese. Keep action items clear for daily meeting.\n\n"
         f"User question:\n{question}\n\n"

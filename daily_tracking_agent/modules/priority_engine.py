@@ -78,9 +78,7 @@ def calculate_priorities(df: pd.DataFrame, issues: list[Issue], my_pic_names: li
         elif any(w in note for w in ["tbd", "confirm"]):
             score += 10
         text = str(row.get("TaskText", "")).lower()
-        if any(w in text for w in ["hara", "fta", "fmea", "dfa", "fsc", "tsc", "safety case"]):
-            score += 20
-        elif any(w in text for w in ["architecture", "system spec", "requirement"]):
+        if any(w in text for w in ["architecture", "system spec", "requirement", "interface", "integration", "impact analysis"]):
             score += 15
         elif any(w in text for w in ["code", "test"]):
             score += 8

@@ -10,8 +10,9 @@ from .models import Issue
 
 BLOCKING_WORDS = ["waiting", "pending", "block", "blocked", "tbd", "confirm", "clarify"]
 COMPLEX_WORDS = [
-    "hara", "fta", "fmea", "dfa", "fsc", "tsc", "safety", "architecture", "impact analysis",
-    "customer review", "oem review", "requirement analysis", "system spec", "integration",
+    "architecture", "design", "interface", "impact analysis", "customer review", "oem review",
+    "requirement analysis", "system spec", "specification", "integration", "bring-up",
+    "debug", "validation", "migration", "release",
 ]
 ACTION_WORDS = ["update", "review", "analyze", "explain", "align", "test", "fix", "prepare", "implement", "validate"]
 SIMPLE_WORDS = ["minor", "typo", "format", "small fix", "comment reply", "documentation clean-up"]
@@ -106,7 +107,7 @@ def check_rules(df: pd.DataFrame, today: date, capacity: dict) -> list[Issue]:
         if est is not None and not pd.isna(est):
             est_f = float(est)
             if any(w in text for w in COMPLEX_WORDS) and est_f <= 2:
-                issues.append(_base_issue(row, "High", "Possible underestimate", "Estimate", f"Complex/safety-related task has Est={est_f:g} MH.", "Recommend PM/PIC confirmation of scope and assumptions.", "Does this estimate include analysis, review, and rework?", 20))
+                issues.append(_base_issue(row, "High", "Possible underestimate", "Estimate", f"Complex system task has Est={est_f:g} MH.", "Recommend PM/PIC confirmation of scope and assumptions.", "Does this estimate include analysis, review, and rework?", 20))
             action_count = sum(1 for w in ACTION_WORDS if w in text)
             if action_count >= 3 and est_f <= 4:
                 issues.append(_base_issue(row, "High" if est_f <= 2 else "Medium", "Possible underestimate due to multi-deliverable scope", "Estimate", f"{action_count} action keywords with Est={est_f:g} MH.", "Clarify deliverables or split scope.", "Are multiple hidden deliverables included?", 20))

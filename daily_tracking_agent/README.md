@@ -1,6 +1,6 @@
 # Daily Tracking Control Tool
 
-Local-first Python tool for daily automotive software project tracking. It reads only a OneDrive-synced local Excel file, copies it to a temp folder, analyzes the temp copy, writes local reports, and optionally sends a short summary to a Power Automate / Teams Workflow webhook.
+Local-first Python tool for daily system/software task tracking. It reads only a OneDrive-synced local Excel file, copies it to a temp folder, analyzes the temp copy, writes local reports, and optionally sends a short summary to a Power Automate / Teams Workflow webhook.
 
 ## Key Safety Rules
 

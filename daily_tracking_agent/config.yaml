@@ -56,38 +56,38 @@ teams:
   send_failure_notification: true
 
 estimate_baseline:
-  HARA:
-    min_mh: 4
-    max_mh: 24
-    keywords: ["HARA", "hazard", "ASIL", "safety goal"]
-  FTA:
-    min_mh: 4
-    max_mh: 32
-    keywords: ["FTA", "fault tree"]
-  FMEA:
-    min_mh: 4
-    max_mh: 32
-    keywords: ["FMEA", "failure mode"]
-  DFA:
-    min_mh: 4
-    max_mh: 24
-    keywords: ["DFA", "dependent failure"]
-  SafetyConcept:
-    min_mh: 8
-    max_mh: 40
-    keywords: ["FSC", "TSC", "safety concept", "safety mechanism"]
   SystemSpec:
     min_mh: 4
     max_mh: 40
-    keywords: ["system spec", "SYS", "requirement", "SRS", "SPEC"]
+    keywords: ["system spec", "sys", "requirement", "srs", "spec", "specification"]
   Architecture:
     min_mh: 8
     max_mh: 40
     keywords: ["architecture", "design", "interface"]
+  RequirementAnalysis:
+    min_mh: 4
+    max_mh: 32
+    keywords: ["requirement analysis", "analyze requirement", "impact analysis", "customer requirement"]
+  CustomerReview:
+    min_mh: 2
+    max_mh: 24
+    keywords: ["customer review", "oem review", "customer feedback", "customer comment"]
+  Integration:
+    min_mh: 4
+    max_mh: 32
+    keywords: ["integration", "integrate", "merge", "bring-up"]
   Code:
     min_mh: 4
     max_mh: 40
-    keywords: ["code", "implementation"]
+    keywords: ["code", "implementation", "implement", "feature"]
+  Test:
+    min_mh: 2
+    max_mh: 24
+    keywords: ["test", "testing", "verify", "validation", "debug"]
+  Review:
+    min_mh: 0.5
+    max_mh: 8
+    keywords: ["review", "check", "confirm", "feedback"]
   MinorUpdate:
     min_mh: 0.5
     max_mh: 4
