@@ -52,6 +52,13 @@ urgent:
     - production issue
     - customer urgent
 
+command_inbox:
+  enabled: true
+  file: "./tracking_commands.xlsx"
+  sheet_name: "Commands"
+  max_commands_per_run: 5
+  max_response_chars: 4000
+
 temp:
   folder: "./temp"
 

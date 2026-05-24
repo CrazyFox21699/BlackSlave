@@ -38,39 +38,38 @@ def build_teams_summary(
     questions = _first_nonempty(groups.get("questions_pm", []) + groups.get("follow_member", []) + groups.get("cleanup", []), 3)
     source_time = context.source_last_modified.strftime("%H:%M %Y-%m-%d") if context.source_last_modified else "unknown"
     replan = _replan_needed(issues, prioritized_df, workload, max_items)
-    blockers = _blockers(issues, max_items)
     data_fix = _data_fix(issues, max_items)
     urgent_lines = _urgent_impact_lines(urgent_impact, max_items)
     confidence, confidence_reason = _report_confidence(issues)
     overloaded = _overloaded_pics(workload)
+    member_lines = member_actions_for_teams(prioritized_df, limit_pics=5, limit_tasks_per_pic=1)
 
     lines = [
-        f"Daily Work Control - {context.today.strftime('%Y-%m-%d')}",
-        f"Health: Rows {context.row_count} | High/Critical {len(high)} | Data issues {len(dq)} | Overloaded PICs {len(overloaded)} | Confidence {confidence}",
-        f"Source modified: {source_time}",
-        f"Confidence reason: {confidence_reason}",
+        f"Daily tracking - {context.today.strftime('%Y-%m-%d')}",
+        f"Rows {context.row_count} | High {len(high)} | Due/overdue {len(due_overdue)} | Overloaded {len(overloaded)} | Confidence {confidence}",
+        f"Source: {source_time} ({confidence_reason})",
         "",
-        "Do today",
+        "My focus",
     ]
-    lines.extend(_task_lines(my_focus, int(report_config.get("max_my_focus_items", 3))) or ["- No active high-priority personal focus item found."])
+    lines.extend(_task_lines(my_focus, min(int(report_config.get("max_my_focus_items", 3)), 3)) or ["- No active high-priority personal focus item found."])
     lines.append("")
-    lines.append("Member actions today")
-    lines.extend(member_actions_for_teams(prioritized_df) or ["- No urgent member action found."])
+    lines.append("Members")
+    lines.extend(member_lines or ["- No urgent member action found."])
     lines.append("")
-    lines.append("Re-plan needed")
+    lines.append("Re-plan")
     lines.extend(replan or ["- No urgent re-plan item found."])
-    lines.append("")
-    lines.append("Urgent impact / OT")
-    lines.extend(urgent_lines or ["- No urgent/unplanned work detected from tracking keywords."])
-    lines.append("")
-    lines.append("Blockers")
-    lines.extend(blockers or ["- No blocker found."])
-    lines.append("")
-    lines.append("Data fix")
-    lines.extend(data_fix or ["- No urgent data quality fix found."])
-    lines.append("")
-    lines.append("Daily questions")
-    lines.extend([f"- {q}" for q in questions] or ["- Confirm top priorities, blockers, and recovery plans for due/overdue items."])
+    if urgent_lines:
+        lines.append("")
+        lines.append("Urgent/OT")
+        lines.extend(urgent_lines)
+    if data_fix:
+        lines.append("")
+        lines.append("Data fix")
+        lines.extend(data_fix)
+    if questions:
+        lines.append("")
+        lines.append("Ask")
+        lines.extend([f"- {q}" for q in questions[:2]])
     lines.append("")
     lines.append(f"Full report: {context.report_markdown_path or 'not generated'}")
     return "\n".join(lines)

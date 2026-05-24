@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from modules.command_inbox import DONE_STATUS, ERROR_STATUS, load_pending_commands, update_command_result
 from modules.data_normalizer import normalize_data
 from modules.estimate_analyzer import analyze_estimate_baselines
 from modules.excel_loader import load_excel
@@ -36,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pic", action="append", default=[], help="Filter question/report to one PIC. Can be repeated.")
     parser.add_argument("--send-answer-to-teams", action="store_true", help="Send --ask/--pic answer to Teams webhook.")
     parser.add_argument("--urgent-impact-only", action="store_true", help="Send/print short urgent impact update instead of full report.")
+    parser.add_argument("--process-command-inbox", action="store_true", help="Process pending Teams commands from command_inbox.file.")
     return parser.parse_args()
 
 
@@ -63,6 +65,9 @@ def main() -> int:
         config.setdefault("ollama", {})["enabled"] = False
     if args.no_teams or args.dry_run:
         config.setdefault("teams", {})["enabled"] = False
+
+    if args.process_command_inbox:
+        return process_command_inbox(config, today, logger, dry_run=args.dry_run, no_teams=args.no_teams)
 
     try:
         result = run_analysis(config, today, logger)
@@ -195,6 +200,53 @@ def run_analysis(config: dict, today: datetime, logger) -> dict:
     }
 
 
+def process_command_inbox(config: dict, today: datetime, logger, dry_run: bool = False, no_teams: bool = False) -> int:
+    path, commands = load_pending_commands(config.get("command_inbox", {}))
+    if not commands:
+        logger.info("No pending tracking command found: %s", path or "not configured")
+        return 0
+
+    logger.info("Processing %s tracking command(s) from %s", len(commands), path)
+    try:
+        result = run_analysis(config, today, logger)
+    except Exception as exc:
+        logger.exception("Command inbox analysis failed: %s", exc)
+        for command in commands:
+            if not dry_run:
+                update_command_result(config.get("command_inbox", {}), command, ERROR_STATUS, f"Tracking command failed: {exc}")
+        if not no_teams and not dry_run:
+            send_teams_message(f"Tracking command failed before answer.\nReason: {exc}", config.get("teams", {}), logger)
+        return 1
+
+    exit_code = 0
+    for command in commands:
+        try:
+            answer = answer_tracking_question(
+                command.command,
+                result["prioritized_df"],
+                result["issues"],
+                today,
+                config,
+                logger,
+            )
+            message = _command_response_message(command, answer)
+            print(message)
+            if not dry_run:
+                update_command_result(config.get("command_inbox", {}), command, DONE_STATUS, answer)
+                send_teams_message(message, config.get("teams", {}), logger, force_disabled=no_teams)
+        except Exception as exc:
+            logger.exception("Failed to process command %s: %s", command.command_id, exc)
+            exit_code = 1
+            if not dry_run:
+                update_command_result(config.get("command_inbox", {}), command, ERROR_STATUS, str(exc))
+    return exit_code
+
+
+def _command_response_message(command, answer: str) -> str:
+    requested_by = f" for {command.requested_by}" if command.requested_by else ""
+    return f"Tracking quick answer{requested_by}\nCommand: {command.command}\n\n{answer}"
+
+
 def _schema_issues(missing: list[str]) -> list[Issue]:
     return [
         Issue(
@@ -219,6 +271,9 @@ def _resolve_relative_paths(config: dict, base_dir: Path) -> None:
     urgent_file = config.get("urgent", {}).get("external_file")
     if urgent_file and not Path(urgent_file).is_absolute():
         config["urgent"]["external_file"] = str((base_dir / urgent_file).resolve())
+    command_file = config.get("command_inbox", {}).get("file")
+    if command_file and not Path(command_file).is_absolute():
+        config["command_inbox"]["file"] = str((base_dir / command_file).resolve())
 
 
 def _save_query_answer(answer: str, report_config: dict, today: datetime) -> Path:

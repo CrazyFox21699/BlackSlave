@@ -41,15 +41,15 @@ def build_daily_brief(prioritized_df: pd.DataFrame, issues: list[Issue], today: 
     high_issues = [i for i in issues if i.severity in {"Critical", "High"}]
     estimate_issues = [i for i in issues if i.category in {"Estimate", "Breakdown"}]
     lines = [
-        f"Daily brief - {today.strftime('%Y-%m-%d')}",
-        f"Open tasks: {len(active)} | High/Critical issues: {len(high_issues)}",
+        f"Tracking quick check - {today.strftime('%Y-%m-%d')}",
+        f"Open {len(active)} | High/Critical {len(high_issues)}",
         "",
-        "Top actions today",
+        "Today:",
     ]
-    lines.extend(_task_lines(active.head(8)) or ["- No open action found."])
+    lines.extend(_task_lines(active.head(5)) or ["- No open action found."])
     lines.append("")
-    lines.append("Top estimate/scope risks")
-    lines.extend(_issue_lines(estimate_issues[:5]) or ["- No major estimate/scope issue found."])
+    lines.append("Estimate/scope:")
+    lines.extend(_issue_lines(estimate_issues[:3]) or ["- No major estimate/scope issue found."])
     return "\n".join(lines)
 
 
@@ -60,7 +60,7 @@ def build_member_report(pics: list[str], prioritized_df: pd.DataFrame, issues: l
     member_df = prioritized_df[mask & (prioritized_df["CurrentProgress"] < 100)].sort_values("PriorityScore", ascending=False)
     member_issues = [i for i in issues if (i.pic or "").lower() in normalized]
 
-    lines = [f"Member work report - {', '.join(pics)} - {today.strftime('%Y-%m-%d')}"]
+    lines = [f"Quick work check - {', '.join(pics)} - {today.strftime('%Y-%m-%d')}"]
     for pic in pics:
         pic_df = member_df[member_df["PIC"].astype(str).str.lower() == pic.lower()]
         pic_issues = [i for i in member_issues if (i.pic or "").lower() == pic.lower()]
@@ -69,19 +69,22 @@ def build_member_report(pics: list[str], prioritized_df: pd.DataFrame, issues: l
         today_scope = pic_df[(pic_df["DaysToDue"].fillna(999) <= 0) | (pic_df["PriorityScore"] >= 60)].copy()
         today_mh = float(today_scope["RemainingMH"].fillna(0).sum()) if not today_scope.empty else 0.0
         overload = today_mh > daily_capacity
+        status = "OVER 8H - re-plan needed" if overload else "OK within 8H"
+        delay = f"{len(due)} due/overdue" if len(due) else "no due/overdue"
         lines.extend([
             "",
-            f"{pic}",
-            f"- Open tasks: {len(pic_df)} | Delayed/due today: {len(due)} | High/Critical issues: {len(high)}",
-            f"- Today workload: {today_mh:.1f} MH / {daily_capacity:.1f} MH capacity -> {'OVER 8H, needs re-plan' if overload else 'within daily capacity'}",
-            f"- Delay status: {'has overdue/due-today unfinished task' if len(due) else 'no overdue/due-today unfinished task'}",
-            "- Today actions, in priority order:",
+            f"{pic}: {today_mh:.1f}/{daily_capacity:.1f}h, {status}; {delay}; {len(high)} high risk.",
+            "Do today:",
         ])
-        lines.extend(_task_lines(today_scope.head(6), prefix="  ", include_done=True) or ["  - No action required today from current rules."])
-        lines.append("- Done for today when:")
-        lines.extend(_done_lines(today_scope.head(6), prefix="  ") or ["  - No due/high-priority task selected for today."])
-        lines.append("- Risks/clarifications:")
-        lines.extend(_issue_lines(pic_issues[:5], prefix="  ") or ["  - No major risk found."])
+        lines.extend(_task_lines(today_scope.head(4), prefix="  ", include_done=False) or ["  - No due/high-priority action found."])
+        done = _done_lines(today_scope.head(2), prefix="  ")
+        if done:
+            lines.append("Done means:")
+            lines.extend(done)
+        risks = _issue_lines(pic_issues[:3], prefix="  ")
+        if risks:
+            lines.append("Watch:")
+            lines.extend(risks)
     return "\n".join(lines)
 
 
@@ -119,9 +122,8 @@ def _task_lines(df: pd.DataFrame, prefix: str = "", include_done: bool = False) 
     for _, row in df.iterrows():
         done_hint = f" | Done: {_done_condition(row)}" if include_done else ""
         lines.append(
-            f"{prefix}- [{row.get('PriorityClass')}] Row {int(row.get('RowID'))}: "
-            f"{row.get('Milestone', '')}/{row.get('Item', '')} | {_due_text(row.get('DaysToDue'))} | "
-            f"Rem {float(row.get('RemainingMH', 0)):.1f} MH | Progress {float(row.get('CurrentProgress', 0)):.0f}%"
+            f"{prefix}- Row {int(row.get('RowID'))}: {row.get('Item', '')} | {_due_text(row.get('DaysToDue'))} | "
+            f"{float(row.get('RemainingMH', 0)):.1f}h left | {float(row.get('CurrentProgress', 0)):.0f}%"
             f"{done_hint}"
         )
     return lines
@@ -137,12 +139,9 @@ def _done_lines(df: pd.DataFrame, prefix: str = "") -> list[str]:
 def _done_condition(row: pd.Series) -> str:
     target = _format_target(row.get("Target", ""))
     note = str(row.get("Note", "") or "").strip()
-    if target == "0%":
-        target_text = "target 0% is confirmed as intentional, or target/progress is corrected"
-    else:
-        target_text = target if target else "planned target is confirmed"
-    blockers = " and note has no pending/blocked/TBD item" if not _has_blocker(note) else " and blocker/recovery action is clarified"
-    return f"progress updated to 100% or agreed daily target reached ({target_text}){blockers}"
+    target_text = target if target and target != "0%" else "agreed target"
+    blockers = "no blocker" if not _has_blocker(note) else "blocker owner/date confirmed"
+    return f"reach {target_text} or update progress; {blockers}"
 
 
 def _has_blocker(note: str) -> bool:
@@ -168,10 +167,7 @@ def _format_target(value: object) -> str:
 
 
 def _issue_lines(issues: list[Issue], prefix: str = "") -> list[str]:
-    return [
-        f"{prefix}- [{issue.severity}] Row {issue.row_id or '-'} {issue.issue_type}: {issue.evidence}"
-        for issue in issues
-    ]
+    return [f"{prefix}- Row {issue.row_id or '-'}: {issue.issue_type}" for issue in issues]
 
 
 def _due_text(value: object) -> str:

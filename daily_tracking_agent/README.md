@@ -63,16 +63,22 @@ sync.folder_path: local OneDrive folder containing the tracking Excel
 sync.tracking_file: exact tracking workbook file name
 report.output_folder: OneDrive/SharePoint-synced Reports folder
 urgent.external_file: OneDrive/SharePoint-synced urgent_tasks.xlsx
+command_inbox.file: OneDrive/SharePoint-synced tracking_commands.xlsx
 ollama.model: one model from `ollama list`
 teams.webhook_url: Power Automate HTTP POST URL containing `sig=`
 teams.enabled: true
 ```
 
-4. Copy or keep `urgent_tasks.xlsx` in the configured OneDrive folder. It must contain:
+4. Copy or keep these intake files in the configured OneDrive folder:
 
 ```text
+urgent_tasks.xlsx
 Sheet: UrgentTasks
 Table: UrgentTasksTable
+
+tracking_commands.xlsx
+Sheet: Commands
+Table: TrackingCommandsTable
 ```
 
 5. Test once without Teams:
@@ -93,10 +99,17 @@ python main.py --config config.yaml --no-ollama
 powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_windows_task.ps1 -StartTime "08:00"
 ```
 
+8. Register Teams command inbox checker:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_command_inbox_task.ps1 -StartTime "07:30" -EndTime "19:30" -IntervalMinutes 1
+```
+
 After this, normal usage is only:
 
 ```text
-08:00 auto report -> Teams
+08:00 auto short report -> Teams
+Team member posts "check Lion" -> Power Automate writes tracking_commands.xlsx -> common PC replies to Teams
 Double-click RUN_URGENT_IMPACT.bat when urgent work appears
 Double-click ASK_TRACKING.bat when you want a member report
 ```
@@ -107,13 +120,16 @@ Double-click ASK_TRACKING.bat when you want a member report
 config.yaml                              Main configuration
 RUN_DAILY_WITH_OLLAMA.bat                Double-click daily run
 ASK_TRACKING.bat                         Double-click local question mode
+RUN_COMMAND_INBOX.bat                    Double-click one command inbox check
 scripts/register_windows_task.ps1        Register 08:00 scheduled run
+scripts/register_command_inbox_task.ps1  Register Teams command inbox checker
 modules/report_builder.py                Teams/full report structure
 modules/query_engine.py                  Member report / Q&A structure
 modules/ollama_reviewer.py               Ollama prompts
 modules/rule_checker.py                  Tracking sanity rules
 modules/urgent_impact_analyzer.py        Urgent/unplanned impact and OT analyzer
 urgent_tasks.xlsx                        Reviewable urgent/unplanned work intake file
+tracking_commands.xlsx                   Teams command inbox file
 ```
 
 ## First-Time Machine Setup
@@ -309,6 +325,25 @@ For local testing inside the repo, this can stay as:
 
 ```yaml
 external_file: "./urgent_tasks.xlsx"
+```
+
+### Teams Command Inbox
+
+Config:
+
+```yaml
+command_inbox:
+  enabled: true
+  file: "C:/Users/HuyTQ136/FPT Software Company Limited/.../02_Project_Plan/tracking_commands.xlsx"
+  sheet_name: "Commands"
+  max_commands_per_run: 5
+  max_response_chars: 4000
+```
+
+For local testing inside the repo:
+
+```yaml
+file: "./tracking_commands.xlsx"
 ```
 
 What it reports:
@@ -637,6 +672,95 @@ Decision: reassign/defer affected tasks or accept OT.
 ```
 
 This avoids polling every 15 minutes and keeps the tool on-demand.
+
+## Power Automate For Member Quick Check
+
+Use this when a member wants a short answer in the Teams group during the day.
+
+Goal:
+
+```text
+Member posts "check Lion" in Teams
+-> Power Automate appends one row to tracking_commands.xlsx
+-> Common PC scheduled task checks pending commands every 1 minute
+-> Tool reads tracking Excel temp copy
+-> Tool sends short answer back to Teams
+-> Tool marks command row as done/error
+```
+
+Suggested Teams commands:
+
+```text
+check Lion
+report Cat
+Tiger hôm nay làm gì
+check Lion Cat
+```
+
+Recommended XLSX target:
+
+```text
+C:\Users\HuyTQ136\FPT Software Company Limited\...\02_Project_Plan\tracking_commands.xlsx
+```
+
+The file must contain:
+
+```text
+Sheet: Commands
+Table: TrackingCommandsTable
+```
+
+Required columns:
+
+```text
+ID
+Command
+Status
+```
+
+Recommended columns:
+
+```text
+ID, Date, Command, RequestedBy, Status, CreatedAt, ProcessedAt, Response, TeamsMessage
+```
+
+Power Automate flow shape:
+
+```text
+Trigger: new Teams message
+Condition: message starts with "check " OR "report "
+Action: Excel Online (Business) - Add a row into a table
+File: tracking_commands.xlsx
+Table: TrackingCommandsTable
+Status: pending
+```
+
+Map the columns:
+
+```text
+ID           -> concat('CMD-', formatDateTime(utcNow(),'yyyyMMdd-HHmmss'))
+Date         -> formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd')
+Command      -> original message text
+RequestedBy  -> sender display name
+Status       -> pending
+CreatedAt    -> formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd HH:mm')
+TeamsMessage -> original message body
+```
+
+Register the common PC checker once:
+
+```powershell
+cd D:\Tool_xam\BlackSlave\daily_tracking_agent
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_command_inbox_task.ps1 -StartTime "07:30" -EndTime "19:30" -IntervalMinutes 1
+```
+
+Manual test:
+
+```powershell
+python main.py --config config.yaml --process-command-inbox --dry-run --no-ollama
+```
+
+This checker is not a full report loop. If there is no pending command, it exits quickly and does not analyze the tracking sheet.
 
 ## Running The Tool
 
