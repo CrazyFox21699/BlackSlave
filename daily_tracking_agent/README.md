@@ -6,6 +6,7 @@ Local-first Python tool for daily system/software task tracking. It reads only a
 
 - Validates OneDrive/local file readiness before reading Excel.
 - Copies the Excel file to `temp/` and analyzes only the temp copy.
+- Keeps a last-good local snapshot so the morning report can still run if the live workbook is locked by Excel/OneDrive.
 - Checks schedule, progress, delta, estimate sanity, overload, blockers, and data quality.
 - Detects urgent/unplanned work and estimates affected planned tasks plus OT hours.
 - Generates Markdown and Excel reports.
@@ -45,6 +46,7 @@ modules/query_engine.py                  Member report / Q&A structure
 modules/ollama_reviewer.py               Ollama prompts
 modules/rule_checker.py                  Tracking sanity rules
 modules/urgent_impact_analyzer.py        Urgent/unplanned impact and OT analyzer
+urgent_tasks.xlsx                        Reviewable urgent/unplanned work intake file
 ```
 
 ## First-Time Machine Setup
@@ -105,6 +107,9 @@ sync:
   retry_interval_seconds: 5
   max_source_file_age_hours: 24
   fail_on_stale_source: false
+  allow_snapshot_when_locked: true
+  max_snapshot_age_hours: 24
+  snapshot_folder: "D:/Tool_xam/BlackSlave/daily_tracking_agent/temp/source_snapshots"
 ```
 
 Use `/` in YAML paths. Do not paste a SharePoint URL.
@@ -114,6 +119,22 @@ Find the Excel file name:
 ```powershell
 dir "C:\Users\HuyTQ136\FPT Software Company Limited\OnedriveSharing - TMCSYSAUTOSA1\No2.LowVoltagePowerSupplySystem\00_Share\02_FromFPT\01_Project_Management\02_Project_Plan\*.xlsx"
 ```
+
+### If The Excel File Is Open/Locked
+
+The first successful run stores a last-good snapshot under `temp/source_snapshots/`.
+
+Morning behavior:
+
+```text
+1. Validate OneDrive folder and tracking file.
+2. Try to copy the live Excel file to temp.
+3. If the live file is locked, retry until wait_sync_seconds.
+4. If still locked and allow_snapshot_when_locked=true, use the last-good snapshot.
+5. Add a High sync warning into Teams/report so everyone knows the report may not include latest edits.
+```
+
+This still never analyzes the source workbook directly and never writes back to it. If there is no snapshot yet, the tool fails before Excel analysis and can send a failure notification.
 
 ### Report Folder
 
@@ -200,7 +221,8 @@ Config:
 ```yaml
 urgent:
   enabled: true
-  external_file: "C:/Users/HuyTQ136/FPT Software Company Limited/OnedriveSharing - TMCSYSAUTOSA1/No2.LowVoltagePowerSupplySystem/00_Share/02_FromFPT/01_Project_Management/02_Project_Plan/urgent_tasks.csv"
+  external_file: "C:/Users/HuyTQ136/FPT Software Company Limited/OnedriveSharing - TMCSYSAUTOSA1/No2.LowVoltagePowerSupplySystem/00_Share/02_FromFPT/01_Project_Management/02_Project_Plan/urgent_tasks.xlsx"
+  sheet_name: "UrgentTasks"
   impact_window_days: 5
   keywords:
     - urgent
@@ -219,7 +241,7 @@ urgent:
 For local testing inside the repo, this can stay as:
 
 ```yaml
-external_file: "./urgent_tasks.csv"
+external_file: "./urgent_tasks.xlsx"
 ```
 
 What it reports:
@@ -238,34 +260,47 @@ Urgent impact / OT
   - may affect Row 21: M1/System spec, due in 1d, rem 4.0 MH
 ```
 
-### Urgent Task CSV Format
+### Urgent Task Workbook Format
 
-The tool can read urgent tasks from:
+The recommended intake file is:
 
 ```text
-urgent_tasks.csv
+urgent_tasks.xlsx
+Sheet: UrgentTasks
+Table: UrgentTasksTable
 ```
 
 Recommended columns:
 
-```csv
-id,date,pic,estimate_mh,item,due,reason,status,source
-U-001,2026-05-23,Cat,3,Support customer issue ABC,today,Customer escalation,open,teams
-U-002,2026-05-23,Tiger,2,Hotfix build issue,today,Integration blocked,open,teams
+```text
+ID
+Date
+PIC
+EstimateMH
+Item
+Due
+Reason
+Status
+Source
+CreatedBy
+CreatedAt
+TeamsMessage
+Decision
+ImpactNote
 ```
 
 Required fields:
 
 ```text
-pic
-estimate_mh
-item
+PIC
+EstimateMH
+Item
 ```
 
 Useful optional fields:
 
 ```text
-id,date,due,reason,status,source
+ID, Date, Due, Reason, Status, Source, CreatedBy, CreatedAt, TeamsMessage, Decision, ImpactNote
 ```
 
 Status handling:
@@ -277,6 +312,8 @@ Status handling:
 - rows with blank date are included.
 
 Keep this file in a OneDrive-synced folder if Power Automate will append rows to it.
+
+CSV is still supported for old setup, but XLSX is easier to review because the team can filter by PIC/status/date and update `Decision` after the daily discussion.
 
 ## Power Automate Setup For Teams
 
@@ -391,9 +428,9 @@ Goal:
 
 ```text
 User posts urgent command in Teams
--> Power Automate appends one row to urgent_tasks.csv
+-> Power Automate appends one row to urgent_tasks.xlsx
 -> You run RUN_URGENT_IMPACT.bat when you want an update
--> Tool reads tracking sheet + urgent_tasks.csv
+-> Tool reads tracking sheet + urgent_tasks.xlsx
 -> Tool posts short impact/OT update to Teams
 ```
 
@@ -405,19 +442,26 @@ urgent Tiger 2h hotfix integration build
 urgent Lion 1.5h clarify customer question
 ```
 
-Recommended CSV target:
+Recommended XLSX target:
 
 ```text
-C:\Users\HuyTQ136\FPT Software Company Limited\...\02_Project_Plan\urgent_tasks.csv
+C:\Users\HuyTQ136\FPT Software Company Limited\...\02_Project_Plan\urgent_tasks.xlsx
 ```
 
 ### Manual First
 
-Before automating Power Automate append, create/edit `urgent_tasks.csv` manually:
+Before automating Power Automate append, open `urgent_tasks.xlsx` and add one row in sheet `UrgentTasks`:
 
-```csv
-id,date,pic,estimate_mh,item,due,reason,status,source
-U-001,2026-05-23,Cat,3,Support customer issue ABC,today,Customer escalation,open,manual
+```text
+ID: U-001
+Date: 2026-05-23
+PIC: Cat
+EstimateMH: 3
+Item: Support customer issue ABC
+Due: today
+Reason: Customer escalation
+Status: open
+Source: manual
 ```
 
 Then run:
@@ -448,21 +492,24 @@ Flow shape:
 Trigger: new Teams message
 Condition: message starts with "urgent "
 Parse: urgent <PIC> <MH>h <description>
-Action: append row to urgent_tasks.csv or an Excel table
+Action: append row to urgent_tasks.xlsx / UrgentTasksTable
 ```
 
-The local Python tool does not need Graph API. Power Automate only captures the urgent command into a small file.
+The local Python tool does not need Graph API. Power Automate only captures the urgent command into a small Excel intake file.
 
 Simple parsed fields:
 
 ```text
-date = today
-pic = second token
-estimate_mh = number before "h"
-item = remaining text
-due = today
-status = open
-source = teams
+ID = concat('U-', formatDateTime(utcNow(),'yyyyMMdd-HHmmss'))
+Date = formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd')
+PIC = second token
+EstimateMH = number before "h"
+Item = remaining text
+Due = today
+Status = open
+Source = teams
+CreatedAt = current time
+TeamsMessage = original message text
 ```
 
 If parsing in Power Automate is too annoying, use a stricter command:
@@ -474,10 +521,37 @@ urgent|Tiger|2|hotfix integration build
 
 Then split by `|` and append columns directly.
 
+For the append action, use:
+
+```text
+Excel Online (Business) - Add a row into a table
+Location: OneDrive for Business
+Document Library: OneDrive
+File: urgent_tasks.xlsx
+Table: UrgentTasksTable
+```
+
+Map the columns:
+
+```text
+ID           -> concat('U-', formatDateTime(utcNow(),'yyyyMMdd-HHmmss'))
+Date         -> formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd')
+PIC          -> parsed PIC
+EstimateMH   -> parsed hour number
+Item         -> parsed description
+Due          -> today
+Reason       -> parsed description or blank
+Status       -> open
+Source       -> teams
+CreatedBy    -> sender display name
+CreatedAt    -> formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd HH:mm')
+TeamsMessage -> original message body
+```
+
 ### Recommended Low-Effort Workflow
 
 1. User posts urgent command in Teams.
-2. Power Automate appends row to `urgent_tasks.csv`.
+2. Power Automate appends row to `urgent_tasks.xlsx`.
 3. When PM/Huy wants update, double-click:
 
 ```text

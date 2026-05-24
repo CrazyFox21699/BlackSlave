@@ -5,6 +5,9 @@ sync:
   retry_interval_seconds: 5
   max_source_file_age_hours: 24
   fail_on_stale_source: false
+  allow_snapshot_when_locked: true
+  max_snapshot_age_hours: 24
+  snapshot_folder: "./temp/source_snapshots"
 
 excel:
   sheet_name: null
@@ -33,7 +36,8 @@ capacity:
 
 urgent:
   enabled: true
-  external_file: "./urgent_tasks.csv"
+  external_file: "./urgent_tasks.xlsx"
+  sheet_name: "UrgentTasks"
   impact_window_days: 5
   keywords:
     - urgent

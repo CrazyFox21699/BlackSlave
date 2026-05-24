@@ -183,11 +183,12 @@ def _load_external_urgent_tasks(config: dict, today: date) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
 
-    raw = pd.read_csv(path)
+    raw = _read_urgent_file(path, config)
     if raw.empty:
         return pd.DataFrame()
-    raw.columns = [str(c).strip().lower() for c in raw.columns]
-    if "pic" not in raw.columns or "estimate_mh" not in raw.columns or "item" not in raw.columns:
+    raw.columns = [_normalize_col(c) for c in raw.columns]
+    estimate_col = "estimatemh" if "estimatemh" in raw.columns else "estimate_mh"
+    if "pic" not in raw.columns or estimate_col not in raw.columns or "item" not in raw.columns:
         return pd.DataFrame()
 
     rows = raw.copy()
@@ -199,7 +200,7 @@ def _load_external_urgent_tasks(config: dict, today: date) -> pd.DataFrame:
     if rows.empty:
         return pd.DataFrame()
 
-    est = pd.to_numeric(rows["estimate_mh"], errors="coerce").fillna(0)
+    est = pd.to_numeric(rows[estimate_col], errors="coerce").fillna(0)
     result = pd.DataFrame({
         "RowID": rows.get("id", pd.Series(range(1, len(rows) + 1))).apply(lambda v: f"urgent-{v}"),
         "PIC": rows["pic"].fillna("").astype(str).str.strip(),
@@ -216,6 +217,20 @@ def _load_external_urgent_tasks(config: dict, today: date) -> pd.DataFrame:
         "UrgentSource": "external",
     })
     return result[result["PIC"].astype(str).str.strip() != ""]
+
+
+def _read_urgent_file(path: Path, config: dict) -> pd.DataFrame:
+    if path.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:
+        sheet_name = config.get("sheet_name", "UrgentTasks")
+        try:
+            return pd.read_excel(path, sheet_name=sheet_name)
+        except ValueError:
+            return pd.read_excel(path)
+    return pd.read_csv(path)
+
+
+def _normalize_col(value: object) -> str:
+    return str(value).strip().lower().replace(" ", "").replace("-", "").replace("_", "")
 
 
 def _format_due(value: object) -> str:
