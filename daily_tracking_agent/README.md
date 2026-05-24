@@ -34,6 +34,73 @@ D:\Tool_xam\BlackSlave\daily_tracking_agent
 
 If your folder is different, replace the path in commands.
 
+## Tomorrow Company-PC Setup Checklist
+
+Use this short path when setting up the common/company Windows machine.
+
+1. Put the repo here:
+
+```text
+D:\Tool_xam\BlackSlave\daily_tracking_agent
+```
+
+2. Open PowerShell:
+
+```powershell
+cd D:\Tool_xam\BlackSlave\daily_tracking_agent
+python --version
+ollama list
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+pip check
+```
+
+3. Edit `config.yaml`:
+
+```yaml
+sync.folder_path: local OneDrive folder containing the tracking Excel
+sync.tracking_file: exact tracking workbook file name
+report.output_folder: OneDrive/SharePoint-synced Reports folder
+urgent.external_file: OneDrive/SharePoint-synced urgent_tasks.xlsx
+ollama.model: one model from `ollama list`
+teams.webhook_url: Power Automate HTTP POST URL containing `sig=`
+teams.enabled: true
+```
+
+4. Copy or keep `urgent_tasks.xlsx` in the configured OneDrive folder. It must contain:
+
+```text
+Sheet: UrgentTasks
+Table: UrgentTasksTable
+```
+
+5. Test once without Teams:
+
+```powershell
+python main.py --config config.yaml --dry-run --no-ollama
+```
+
+6. Test Teams webhook:
+
+```powershell
+python main.py --config config.yaml --no-ollama
+```
+
+7. Register 08:00 daily run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_windows_task.ps1 -StartTime "08:00"
+```
+
+After this, normal usage is only:
+
+```text
+08:00 auto report -> Teams
+Double-click RUN_URGENT_IMPACT.bat when urgent work appears
+Double-click ASK_TRACKING.bat when you want a member report
+```
+
 ## Files You Usually Touch
 
 ```text
@@ -313,7 +380,7 @@ Status handling:
 
 Keep this file in a OneDrive-synced folder if Power Automate will append rows to it.
 
-CSV is still supported for old setup, but XLSX is easier to review because the team can filter by PIC/status/date and update `Decision` after the daily discussion.
+The current recommended setup uses XLSX because the team can filter by PIC/status/date and update `Decision` after the daily discussion.
 
 ## Power Automate Setup For Teams
 
