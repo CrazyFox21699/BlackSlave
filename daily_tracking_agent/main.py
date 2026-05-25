@@ -124,13 +124,15 @@ def main() -> int:
         return 0
 
     try:
+        report_config = dict(config.get("report", {}))
+        report_config["_capacity"] = config.get("capacity", {})
         md_path, xlsx_path, teams_summary = build_and_save_reports(
             result["context"],
             result["issues"],
             result["prioritized_df"],
             result["groups"],
             result["workload"],
-            config.get("report", {}),
+            report_config,
             result.get("urgent_impact"),
         )
         logger.info("Reports generated: markdown=%s excel=%s", md_path, xlsx_path)

@@ -34,15 +34,15 @@ def build_teams_summary(
     due_overdue = prioritized_df[(prioritized_df["CurrentProgress"] < 100) & (prioritized_df["DaysToDue"].fillna(999) <= 0)]
     my_focus = groups["my_focus"].head(int(report_config.get("max_my_focus_items", 5)))
     max_items = int(report_config.get("max_teams_issues", 3))
-    dq = [i for i in issues if i.category == "Data Quality"]
-    questions = _first_nonempty(groups.get("questions_pm", []) + groups.get("follow_member", []) + groups.get("cleanup", []), 3)
     source_time = context.source_last_modified.strftime("%H:%M %Y-%m-%d") if context.source_last_modified else "unknown"
-    replan = _replan_needed(issues, prioritized_df, workload, max_items)
     data_fix = _data_fix(issues, max_items)
     urgent_lines = _urgent_impact_lines(urgent_impact, max_items)
     confidence, confidence_reason = _report_confidence(issues)
-    overloaded = _overloaded_pics(workload)
-    member_lines = member_actions_for_teams(prioritized_df, limit_pics=5, limit_tasks_per_pic=1)
+    team_load = _team_load_today(prioritized_df, context, report_config)
+    overloaded = team_load[team_load["Over8h"]]
+    load_lines = _team_load_lines(team_load, max_items + 3)
+    load_risk = _load_risk_lines(team_load, max_items)
+    delay_lines = _delay_lines(prioritized_df, max_items)
     has_personal_focus = my_focus is not None and not my_focus.empty
 
     lines = [
@@ -50,31 +50,33 @@ def build_teams_summary(
         f"Rows {context.row_count} | High {len(high)} | Due/overdue {len(due_overdue)} | Overloaded {len(overloaded)} | Confidence {confidence}",
         f"Source: {source_time} ({confidence_reason})",
         "",
-        "My focus" if has_personal_focus else "Team focus",
+        "Team load today",
     ]
+    lines.extend(load_lines or ["- No member workload found for today."])
+    lines.extend([
+        "",
+        "My focus" if has_personal_focus else "Today focus",
+    ])
     focus_df = my_focus if has_personal_focus else prioritized_df[
         (prioritized_df["CurrentProgress"] < 100)
         & ((prioritized_df["DaysToDue"].fillna(999) <= 2) | (prioritized_df["PriorityClass"].isin(["High", "Critical"])))
     ].sort_values("PriorityScore", ascending=False)
     lines.extend(_task_lines(focus_df, min(int(report_config.get("max_my_focus_items", 3)), 3)) or ["- No active high-priority focus item found."])
     lines.append("")
-    lines.append("Members")
-    lines.extend(member_lines or ["- No urgent member action found."])
-    lines.append("")
-    lines.append("Re-plan")
-    lines.extend(replan or ["- No urgent re-plan item found."])
+    lines.append("PM load check")
+    lines.extend(load_risk or ["- No member over 8h today."])
+    if delay_lines:
+        lines.append("")
+        lines.append("Delay")
+        lines.extend(delay_lines)
     if urgent_lines:
         lines.append("")
         lines.append("Urgent/OT")
         lines.extend(urgent_lines)
     if data_fix:
         lines.append("")
-        lines.append("Data fix")
+        lines.append("Data quality later")
         lines.extend(data_fix)
-    if questions:
-        lines.append("")
-        lines.append("Ask")
-        lines.extend([f"- {q}" for q in questions[:2]])
     lines.append("")
     lines.append(f"Full report: {context.report_markdown_path or 'not generated'}")
     return "\n".join(lines)
@@ -121,38 +123,27 @@ def build_and_save_reports(
 
 def _full_markdown(context: AnalysisContext, issues_df: pd.DataFrame, df: pd.DataFrame, groups: dict[str, Any], workload: pd.DataFrame, teams_summary: str, report_config: dict, urgent_impact: dict[str, Any] | None = None) -> str:
     max_issues = int(report_config.get("max_full_report_issues", 30))
+    team_load = _team_load_today(df, context, report_config)
+    focus_df = df[
+        (df["CurrentProgress"] < 100)
+        & ((df["DaysToDue"].fillna(999) <= 2) | (df["PriorityClass"].isin(["High", "Critical"])))
+    ].sort_values("PriorityScore", ascending=False)
     sections = [
-        f"# Daily Work Control Report - {context.today.strftime('%Y-%m-%d')}",
-        "## Executive Summary",
+        f"# Daily Tracking - {context.today.strftime('%Y-%m-%d')}",
+        "## Teams Summary",
         teams_summary,
-        "## Today Commitment",
-        "\n".join(member_actions_for_teams(df, limit_pics=20, limit_tasks_per_pic=3)) or "No urgent member action found.",
-        "## Re-plan Needed",
-        "\n".join(_replan_needed_from_frames(issues_df, df, workload, 30)) or "No urgent re-plan item found.",
+        "## Team Load Today",
+        _df_md(team_load, ["PIC", "TasksToday", "DueOverdue", "TodayMH", "CapacityMH", "Status"]),
+        "## Today Tasks",
+        _df_md(focus_df.head(15), ["RowID", "PIC", "Milestone", "Item", "DaysToDue", "RemainingMH", "CurrentProgress", "PriorityClass"]),
+        "## PM Load / Estimate Check",
+        "\n".join(_load_risk_lines(team_load, 10) + _estimate_risk_lines(issues_df, 8)) or "No major load/estimate risk found.",
+        "## Delay / Blocker",
+        "\n".join(_delay_lines(df, 12) + _blockers_from_frame(issues_df, 8)) or "No delay/blocker found.",
         "## Urgent Impact / OT",
         _urgent_impact_md(urgent_impact),
-        "## Blockers",
-        "\n".join(_blockers_from_frame(issues_df, 30)) or "No blocker found.",
-        "## Data Quality Must Fix",
-        "\n".join(_data_fix_from_frame(issues_df, 30)) or "No urgent data quality fix found.",
-        "## Workload Heatmap",
-        _workload_heatmap_md(workload),
-        "## My Focus Today",
-        _df_md(groups["my_focus"].head(20), ["RowID", "PIC", "Milestone", "Item", "DaysToDue", "RemainingMH", "CurrentProgress", "PriorityScore", "PriorityClass"]),
-        "## Team Actions by PIC",
-        _df_md(groups["team_actions"].head(20), ["RowID", "PIC", "Milestone", "Item", "DaysToDue", "RemainingMH", "CurrentProgress", "PriorityScore", "PriorityClass"]),
-        "## Delay Risks",
-        _issue_md(issues_df, ["Schedule", "Progress"], max_issues),
-        "## Estimate Concerns",
-        _issue_md(issues_df, ["Estimate", "Breakdown"], max_issues),
-        "## Workload Overload",
-        _df_md(workload, list(workload.columns)),
-        "## Data Quality Issues",
-        _issue_md(issues_df, ["Data Quality", "Sync"], max_issues),
-        "## Ollama Review Comments",
-        _issue_md(issues_df, ["Ollama Review"], max_issues),
-        "## Suggested Daily Meeting Questions",
-        "\n".join(f"- {q}" for q in _first_nonempty(groups.get("questions_pm", []) + groups.get("follow_member", []) + groups.get("cleanup", []), 10)) or "- No specific questions generated.",
+        "## Data Quality Backlog",
+        "\n".join(_data_fix_from_frame(issues_df, 10)) or "No urgent data quality fix found.",
     ]
     if context.metadata.get("include_raw_issue_table", False):
         sections.extend(["## Raw Issue Table", _df_md(issues_df.head(max_issues), list(issues_df.columns))])
@@ -174,9 +165,117 @@ def _summary_df(context: AnalysisContext, issues: list[Issue], df: pd.DataFrame,
 def _task_lines(df: pd.DataFrame, limit: int) -> list[str]:
     lines: list[str] = []
     for _, row in df.head(limit).iterrows():
-        due = "Invalid date" if pd.isna(row.get("DaysToDue")) else ("Overdue" if int(row["DaysToDue"]) < 0 else f"Due in {int(row['DaysToDue'])}d")
-        lines.append(f"- [{row.get('PriorityClass')}] {row.get('PIC', '')} | {row.get('Milestone', '')}/{row.get('Item', '')} | {due} | Rem {float(row.get('RemainingMH', 0)):.1f} MH | {float(row.get('CurrentProgress', 0)):.0f}%")
+        due = _due_label(row.get("DaysToDue"))
+        pic = str(row.get("PIC", "") or "Unassigned")
+        lines.append(f"- {pic}: Row {int(row.get('RowID'))} {row.get('Item', '')} | {due} | {float(row.get('RemainingMH', 0)):.1f}h left | {float(row.get('CurrentProgress', 0)):.0f}%")
     return lines
+
+
+def _team_load_today(df: pd.DataFrame, context: AnalysisContext, report_config: dict) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["PIC", "TasksToday", "DueOverdue", "TodayMH", "CapacityMH", "Status", "Over8h"])
+    capacity = report_config.get("_capacity", {}) or {}
+    daily_capacity = float(capacity.get("daily_mh", report_config.get("daily_mh", 8)))
+    today = pd.Timestamp(context.today.date())
+    active = df[
+        (df["PIC"].fillna("").astype(str).str.strip() != "")
+        & (df["CurrentProgress"].fillna(0) < 100)
+    ].copy()
+    if active.empty:
+        return pd.DataFrame(columns=["PIC", "TasksToday", "DueOverdue", "TodayMH", "CapacityMH", "Status", "Over8h"])
+
+    due_overdue = active["DaysToDue"].fillna(999) <= 0
+    in_plan_window = (
+        active["StartDatePlan"].notna()
+        & active["EndDatePlan"].notna()
+        & (active["StartDatePlan"] <= today)
+        & (active["EndDatePlan"] >= today)
+    )
+    today_rows = active[due_overdue | in_plan_window].copy()
+    if today_rows.empty:
+        return pd.DataFrame(columns=["PIC", "TasksToday", "DueOverdue", "TodayMH", "CapacityMH", "Status", "Over8h"])
+
+    today_rows["_DueOverdue"] = today_rows["DaysToDue"].fillna(999) <= 0
+    planned_daily = today_rows["PlannedMHDaily"].fillna(0)
+    remaining = today_rows["RemainingMH"].fillna(0)
+    today_rows["_TodayMH"] = remaining.where(today_rows["_DueOverdue"], planned_daily.where(planned_daily > 0, remaining))
+
+    summary = today_rows.groupby("PIC").agg(
+        TasksToday=("RowID", "count"),
+        DueOverdue=("_DueOverdue", "sum"),
+        TodayMH=("_TodayMH", "sum"),
+    ).reset_index()
+    summary["TodayMH"] = summary["TodayMH"].round(1)
+    summary["CapacityMH"] = daily_capacity
+    summary["Over8h"] = summary["TodayMH"] > daily_capacity
+    summary["Status"] = summary.apply(
+        lambda row: f"OVER by {float(row['TodayMH']) - daily_capacity:.1f}h" if row["Over8h"] else "OK",
+        axis=1,
+    )
+    return summary.sort_values(["Over8h", "TodayMH", "TasksToday"], ascending=[False, False, False])
+
+
+def _team_load_lines(team_load: pd.DataFrame, limit: int) -> list[str]:
+    if team_load is None or team_load.empty:
+        return []
+    lines: list[str] = []
+    for _, row in team_load.head(limit).iterrows():
+        lines.append(
+            f"- {row.get('PIC')}: {int(row.get('TasksToday', 0))} task(s), "
+            f"{float(row.get('TodayMH', 0)):.1f}/{float(row.get('CapacityMH', 8)):.1f}h, "
+            f"due/overdue {int(row.get('DueOverdue', 0))}, {row.get('Status')}"
+        )
+    return lines
+
+
+def _load_risk_lines(team_load: pd.DataFrame, limit: int) -> list[str]:
+    if team_load is None or team_load.empty:
+        return []
+    risk = team_load[team_load["Over8h"] | (team_load["TasksToday"] >= 4)].head(limit)
+    lines: list[str] = []
+    for _, row in risk.iterrows():
+        if row["Over8h"]:
+            lines.append(f"- {row.get('PIC')}: assigned {float(row.get('TodayMH', 0)):.1f}h today, above {float(row.get('CapacityMH', 8)):.1f}h capacity.")
+        else:
+            lines.append(f"- {row.get('PIC')}: {int(row.get('TasksToday', 0))} active task(s) today; confirm priority order.")
+    return lines
+
+
+def _delay_lines(df: pd.DataFrame, limit: int) -> list[str]:
+    if df is None or df.empty:
+        return []
+    rows = df[
+        (df["CurrentProgress"].fillna(0) < 100)
+        & (df["DaysToDue"].fillna(999) <= 0)
+    ].sort_values(["DaysToDue", "PriorityScore"], ascending=[True, False])
+    lines: list[str] = []
+    for _, row in rows.head(limit).iterrows():
+        lines.append(
+            f"- {str(row.get('PIC') or 'Unassigned')}: Row {int(row.get('RowID'))} {row.get('Item', '')} | "
+            f"{_due_label(row.get('DaysToDue'))} | {float(row.get('CurrentProgress', 0)):.0f}%"
+        )
+    return lines
+
+
+def _estimate_risk_lines(issues_df: pd.DataFrame, limit: int) -> list[str]:
+    if issues_df.empty:
+        return []
+    part = issues_df[issues_df["category"].isin(["Estimate", "Breakdown"])].head(limit)
+    return [
+        f"- Row {_cell(row, 'row_id')}: {_cell(row, 'pic') or 'Unassigned'} {_cell(row, 'issue_type')} - {_shorten(_cell(row, 'evidence'), 90)}"
+        for _, row in part.iterrows()
+    ]
+
+
+def _due_label(value: object) -> str:
+    if pd.isna(value):
+        return "invalid date"
+    days = int(value)
+    if days < 0:
+        return f"overdue {abs(days)}d"
+    if days == 0:
+        return "due today"
+    return f"due in {days}d"
 
 
 def _replan_needed(issues: list[Issue], df: pd.DataFrame, workload: pd.DataFrame, limit: int) -> list[str]:
@@ -339,6 +438,8 @@ def _cell(row: pd.Series, column: str) -> str:
     value = row.get(column, "")
     if pd.isna(value):
         return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
     return str(value)
 
 
