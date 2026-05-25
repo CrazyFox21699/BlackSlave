@@ -14,7 +14,6 @@ from modules.estimate_analyzer import analyze_estimate_baselines
 from modules.excel_loader import load_excel
 from modules.logger_setup import setup_logger
 from modules.models import AnalysisContext, Issue
-from modules.ollama_reviewer import review_with_ollama
 from modules.priority_engine import calculate_priorities
 from modules.query_engine import answer_tracking_question
 from modules.report_builder import build_and_save_reports
@@ -30,8 +29,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Run analysis but do not send Teams message")
     parser.add_argument("--no-teams", action="store_true", help="Disable Teams notification")
-    parser.add_argument("--no-ollama", action="store_true", help="Disable Ollama review")
-    parser.add_argument("--with-ollama", action="store_true", help="Force-enable local Ollama review/Q&A for this run")
     parser.add_argument("--today", help="Override today date, YYYY-MM-DD")
     parser.add_argument("--ask", help="Ask a local tracking question, for example: 'Lion hôm nay làm gì?'")
     parser.add_argument("--pic", action="append", default=[], help="Filter question/report to one PIC. Can be repeated.")
@@ -60,10 +57,6 @@ def main() -> int:
     base_dir = config_path.parent
     _resolve_relative_paths(config, base_dir)
 
-    if args.with_ollama:
-        config.setdefault("ollama", {})["enabled"] = True
-    if args.no_ollama:
-        config.setdefault("ollama", {})["enabled"] = False
     if args.no_teams or args.dry_run:
         config.setdefault("teams", {})["enabled"] = False
 
@@ -173,13 +166,6 @@ def run_analysis(config: dict, today: datetime, logger) -> dict:
 
     prioritized_df, groups = calculate_priorities(
         norm_df,
-        issues,
-        config.get("user", {}).get("my_pic_names", []),
-        today.date(),
-    )
-    issues.extend(review_with_ollama(prioritized_df, config.get("ollama", {}), logger))
-    prioritized_df, groups = calculate_priorities(
-        prioritized_df.drop(columns=["PriorityScore", "PriorityClass"], errors="ignore"),
         issues,
         config.get("user", {}).get("my_pic_names", []),
         today.date(),

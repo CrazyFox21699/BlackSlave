@@ -7,7 +7,6 @@ from typing import Any
 import pandas as pd
 
 from .models import Issue
-from .ollama_reviewer import answer_question_with_ollama
 
 
 def answer_tracking_question(
@@ -28,11 +27,6 @@ def answer_tracking_question(
     else:
         base_answer = build_daily_brief(prioritized_df, issues, today)
 
-    ollama_cfg = config.get("ollama", {})
-    if ollama_cfg.get("enabled", False):
-        refined = answer_question_with_ollama(question, base_answer, ollama_cfg, logger)
-        if refined:
-            return refined
     return base_answer
 
 

@@ -1,7 +1,9 @@
 param(
     [string]$AgentDir = "",
     [string]$PythonExe = "",
-    [string]$ConfigPath = ""
+    [string]$ConfigPath = "",
+    [switch]$DryRun,
+    [switch]$NoTeams
 )
 
 if (-not $AgentDir) {
@@ -10,10 +12,20 @@ if (-not $AgentDir) {
 if (-not $PythonExe) {
     $PythonExe = Join-Path $AgentDir ".venv\Scripts\python.exe"
 }
+if (-not (Test-Path $PythonExe)) {
+    $PythonExe = "python"
+}
 if (-not $ConfigPath) {
     $ConfigPath = Join-Path $AgentDir "config.yaml"
 }
 
 Set-Location $AgentDir
-& $PythonExe "$AgentDir\main.py" --config $ConfigPath
+$argsList = @("$AgentDir\main.py", "--config", $ConfigPath)
+if ($DryRun) {
+    $argsList += "--dry-run"
+}
+if ($NoTeams) {
+    $argsList += "--no-teams"
+}
+& $PythonExe @argsList
 exit $LASTEXITCODE

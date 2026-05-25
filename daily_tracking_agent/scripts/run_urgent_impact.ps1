@@ -14,7 +14,7 @@ if (-not (Test-Path $PythonExe)) {
     $PythonExe = "python"
 }
 
-$argsList = @((Join-Path $AgentDir "main.py"), "--config", $ConfigPath, "--urgent-impact-only", "--no-ollama")
+$argsList = @((Join-Path $AgentDir "main.py"), "--config", $ConfigPath, "--urgent-impact-only")
 if ($DryRun) {
     $argsList += "--dry-run"
 }

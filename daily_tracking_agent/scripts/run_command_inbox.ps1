@@ -14,7 +14,7 @@ if (-not (Test-Path $PythonExe)) {
     $PythonExe = "python"
 }
 
-$argsList = @((Join-Path $AgentDir "main.py"), "--config", $ConfigPath, "--process-command-inbox", "--no-ollama")
+$argsList = @((Join-Path $AgentDir "main.py"), "--config", $ConfigPath, "--process-command-inbox")
 if ($DryRun) {
     $argsList += "--dry-run"
 }

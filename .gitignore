@@ -9,6 +9,3 @@ daily_tracking_agent/temp/
 temp/
 daily_tracking_agent/reports/*.xlsx
 daily_tracking_agent/reports/tracking_query_answer_*.md
-
-# Keep the sample report if desired, but avoid accidentally committing real reports.
-!daily_tracking_agent/reports/daily_tracking_report_20260523_000000.md

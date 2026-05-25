@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 Severity = Literal["Low", "Medium", "High", "Critical"]
-IssueSource = Literal["rule", "ollama", "sync", "system"]
+IssueSource = Literal["rule", "sync", "system"]
 
 
 class Issue(BaseModel):

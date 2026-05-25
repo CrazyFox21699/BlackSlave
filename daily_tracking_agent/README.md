@@ -1,59 +1,44 @@
 # Daily Tracking Agent
 
-Tool local-first để đọc tracking Excel đã sync bằng OneDrive, tạo report ngắn mỗi sáng, và trả lời nhanh khi member hỏi trong Teams.
+Tool local-first để đọc tracking Excel từ folder OneDrive local, tạo daily report ngắn và gửi vào Microsoft Teams qua Power Automate webhook.
 
-## Mục Tiêu
+Không dùng SharePoint login, Graph API, username/password hay cloud LLM.
 
-- 08:00 sáng: tự đọc tracking sheet và gửi summary ngắn lên Teams.
-- Trong ngày: member nhắn `check Lion` trong Teams, máy common tự trả lời Lion hôm nay làm gì.
-- Có urgent task: ghi vào `urgent_tasks.xlsx`, tool báo ảnh hưởng deadline/OT.
-- Không login SharePoint, không dùng Graph API, không lưu username/password.
-- Không sửa file tracking gốc. Tool luôn copy Excel sang `temp/` rồi mới analyze.
-- Ollama không bắt buộc. Khuyến nghị máy common chạy `--no-ollama` cho nhẹ.
+## 1. Setup Folder
 
-## File Quan Trọng
-
-```text
-config.yaml
-requirements.txt
-main.py
-urgent_tasks.xlsx
-tracking_commands.xlsx
-RUN_DAILY_WITH_OLLAMA.bat
-RUN_URGENT_IMPACT.bat
-RUN_COMMAND_INBOX.bat
-scripts/register_windows_task.ps1
-scripts/register_command_inbox_task.ps1
-```
-
-## Setup Nhanh Trên Máy Công Ty
-
-Giả sử code nằm ở:
+Khuyến nghị đặt project ở:
 
 ```text
 D:\Tool_xam\BlackSlave\daily_tracking_agent
 ```
 
-Mở PowerShell:
+Nếu khác folder thì thay path tương ứng trong các lệnh bên dưới.
+
+## 2. Cài Python Package
+
+Double-click:
+
+```text
+SETUP_FIRST_TIME.bat
+```
+
+Hoặc chạy PowerShell:
 
 ```powershell
 cd D:\Tool_xam\BlackSlave\daily_tracking_agent
-python --version
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
 pip check
 ```
 
-Nếu thấy:
+`pip check` nên ra:
 
 ```text
 No broken requirements found.
 ```
 
-là Python package OK.
-
-## Config Cần Sửa
+## 3. Sửa Đường Dẫn Trong config.yaml
 
 Mở:
 
@@ -61,13 +46,12 @@ Mở:
 D:\Tool_xam\BlackSlave\daily_tracking_agent\config.yaml
 ```
 
-Sửa các phần này:
+Sửa các dòng này:
 
 ```yaml
 sync:
   folder_path: "C:/Users/HuyTQ136/.../02_Project_Plan"
   tracking_file: "TEN_FILE_TRACKING.xlsx"
-  allow_snapshot_when_locked: true
   snapshot_folder: "D:/Tool_xam/BlackSlave/daily_tracking_agent/temp/source_snapshots"
 
 report:
@@ -79,151 +63,179 @@ urgent:
 command_inbox:
   file: "C:/Users/HuyTQ136/.../02_Project_Plan/tracking_commands.xlsx"
 
-user:
-  my_pic_names: []
-
 teams:
   enabled: true
   webhook_url: "PASTE_POWER_AUTOMATE_HTTP_POST_URL_CO_SIG"
+```
 
-ollama:
-  enabled: false
+Muốn mở nhanh config bằng Notepad:
+
+```text
+EDIT_CONFIG.bat
 ```
 
 Lưu ý:
 
 - Dùng dấu `/` trong YAML path.
-- Không paste SharePoint URL. Chỉ dùng folder local OneDrive.
-- `ollama.enabled: false` là setup khuyến nghị cho máy common.
+- Không paste SharePoint URL.
+- `folder_path` là folder local do OneDrive sync về máy.
+- Máy common nên để:
 
-## File Excel Intake
+```yaml
+user:
+  my_pic_names: []
+```
 
-Copy 2 file này vào folder OneDrive project nếu muốn Power Automate ghi vào đó:
+## 4. Copy File Intake
+
+Copy 2 file này vào folder OneDrive project nếu muốn Power Automate ghi dữ liệu vào đó:
 
 ```text
 urgent_tasks.xlsx
 tracking_commands.xlsx
 ```
 
-`urgent_tasks.xlsx` cần có:
+`urgent_tasks.xlsx`:
 
 ```text
 Sheet: UrgentTasks
 Table: UrgentTasksTable
 ```
 
-`tracking_commands.xlsx` cần có:
+`tracking_commands.xlsx`:
 
 ```text
 Sheet: Commands
 Table: TrackingCommandsTable
 ```
 
-## Test Tool
+## 5. Test Config
+
+Double-click:
+
+```text
+TEST_CONFIG.bat
+```
+
+Nó sẽ in ra các PIC tool đọc được từ file tracking thật.
+
+Nếu muốn chạy bằng PowerShell:
+
+```powershell
+python main.py --config config.yaml --list-pics --dry-run
+```
+
+## 6. Chạy Daily Report
 
 Test không gửi Teams:
 
-```powershell
-python main.py --config config.yaml --dry-run --no-ollama
+```text
+TEST_DAILY_REPORT_NO_TEAMS.bat
 ```
 
-Test gửi Teams thật:
+Chạy thật, có gửi Teams nếu `teams.enabled: true`:
 
-```powershell
-python main.py --config config.yaml --no-ollama
+```text
+RUN_DAILY_REPORT.bat
 ```
 
-Test hỏi nhanh:
+Mở folder report:
 
-```powershell
-python main.py --config config.yaml --ask "check Lion" --no-ollama
+```text
+OPEN_REPORTS_FOLDER.bat
 ```
 
-Xem tool đang đọc được PIC nào trong file thật:
+Report sẽ tập trung vào:
 
-```powershell
-python main.py --config config.yaml --list-pics --dry-run --no-ollama
+- hôm nay mỗi người có bao nhiêu task,
+- tổng effort hôm nay so với 8h,
+- ai đang bị assign quá tải,
+- task due/overdue,
+- urgent/OT nếu có,
+- data quality đưa xuống cuối.
+
+## 7. Auto 08:00 Sáng
+
+Double-click:
+
+```text
+REGISTER_DAILY_8H_TASK.bat
 ```
 
-Test command inbox:
-
-```powershell
-python main.py --config config.yaml --process-command-inbox --dry-run --no-ollama
-```
-
-## Auto 08:00 Sáng
-
-Register Windows Task Scheduler:
-
-```powershell
-cd D:\Tool_xam\BlackSlave\daily_tracking_agent
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_windows_task.ps1 -StartTime "08:00"
-```
-
-Sau đó mở Task Scheduler, tìm:
+Nó tạo Windows Task Scheduler task:
 
 ```text
 Daily Tracking Control Report
 ```
 
-Right click -> `Run` để test.
+Muốn test ngay:
 
-## Teams Command Trong Ngày
+```text
+Task Scheduler -> Daily Tracking Control Report -> Right click -> Run
+```
+
+## 8. Member Hỏi Nhanh Trong Ngày
 
 Member nhắn trong Teams:
 
 ```text
 check Lion
-report Cat
-Tiger hôm nay làm gì
-check Lion Cat
+check Cat
+check huytq136
+report Tiger
 ```
 
-Luồng chạy:
+Flow:
 
 ```text
 Teams message
--> Power Automate ghi 1 row vào tracking_commands.xlsx
+-> Power Automate ghi 1 row pending vào tracking_commands.xlsx
 -> Máy common check mỗi 1 phút
--> Nếu có command pending thì tool analyze tracking
--> Tool gửi câu trả lời ngắn lên Teams
--> Tool mark command done/error
+-> Tool trả lời ngắn lên Teams
+-> Tool mark row done/error
 ```
 
-Register command inbox checker:
-
-```powershell
-cd D:\Tool_xam\BlackSlave\daily_tracking_agent
-powershell.exe -ExecutionPolicy Bypass -File .\scripts\register_command_inbox_task.ps1 -StartTime "07:30" -EndTime "19:30" -IntervalMinutes 1
-```
-
-Không có command pending thì script thoát nhanh, không đọc tracking sheet, không gọi Ollama.
-
-## Power Automate 1: Gửi Message Lên Teams
-
-Flow này dùng để tool gửi report/answer vào group chat.
-
-### Bước 1
-
-Vào:
+Register checker:
 
 ```text
-https://make.powerautomate.com
+REGISTER_COMMAND_INBOX_TASK.bat
 ```
 
-Create -> Instant cloud flow.
-
-Trigger chọn:
+Chạy thử 1 lần:
 
 ```text
-When an HTTP request is received
+RUN_COMMAND_INBOX.bat
 ```
 
-Nếu flow báo premium thì dùng account công ty có premium.
+Không có command pending thì script thoát nhanh, không đọc tracking sheet.
 
-### Bước 2
+## 9. Urgent Task
 
-Trong trigger, paste JSON schema:
+Format nhắn Teams khuyến nghị:
+
+```text
+urgent|Cat|3|support customer issue ABC
+urgent|Tiger|2|hotfix integration build
+```
+
+Power Automate ghi vào `urgent_tasks.xlsx`.
+
+Khi muốn xem impact:
+
+```text
+RUN_URGENT_IMPACT.bat
+```
+
+Tool sẽ báo urgent work ảnh hưởng task nào và có cần OT không.
+
+## 10. Power Automate Flow Gửi Message Lên Teams
+
+Flow này nhận HTTP POST từ tool rồi post vào group chat/channel.
+
+1. Vào `https://make.powerautomate.com`.
+2. Create -> Instant cloud flow.
+3. Trigger: `When an HTTP request is received`.
+4. Paste JSON schema:
 
 ```json
 {
@@ -237,26 +249,22 @@ Trong trigger, paste JSON schema:
 }
 ```
 
-### Bước 3
-
-Bấm `+ New step`.
-
-Chọn:
+5. Add action:
 
 ```text
 Microsoft Teams -> Post message in a chat or channel
 ```
 
-Set như sau:
+6. Set:
 
 ```text
 Post as: Flow bot
 Post in: Group chat
-Group chat: chọn group chat của team
+Group chat: chọn group chat
 Message: @{triggerBody()?['text']}
 ```
 
-Nếu gửi vào channel thì chọn:
+Nếu dùng channel:
 
 ```text
 Post in: Channel
@@ -265,29 +273,20 @@ Channel: chọn channel
 Message: @{triggerBody()?['text']}
 ```
 
-Trong ô Message, nếu đang ở editor thường thì bấm icon code/expression rồi nhập:
+Trong ô Message, nên bấm icon code/expression và nhập đúng:
 
 ```text
 @{triggerBody()?['text']}
 ```
 
-Không để lại dòng HTML rác kiểu:
+Xoá dòng HTML rác nếu có:
 
 ```html
 <p class="editor-paragraph"><br></p>
 ```
 
-### Bước 4
-
-Save flow.
-
-Bấm lại trigger `When an HTTP request is received`.
-
-Copy field:
-
-```text
-HTTP POST URL
-```
+7. Save flow.
+8. Mở lại trigger và copy `HTTP POST URL`.
 
 URL đúng thường có:
 
@@ -298,24 +297,12 @@ sig=
 
 Không copy URL trên thanh địa chỉ browser.
 
-### Bước 5: Test bằng PowerShell
+Test bằng PowerShell:
 
 ```powershell
 $url = "PASTE_HTTP_POST_URL_CO_SIG"
-
-$body = @{
-  text = "Test Daily Tracking webhook"
-} | ConvertTo-Json
-
+$body = @{ text = "Test Daily Tracking webhook" } | ConvertTo-Json
 Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json"
-```
-
-Nếu Teams group nhận được message, paste URL đó vào:
-
-```yaml
-teams:
-  enabled: true
-  webhook_url: "PASTE_HTTP_POST_URL_CO_SIG"
 ```
 
 Nếu lỗi:
@@ -324,27 +311,15 @@ Nếu lỗi:
 OAuth authorization scheme required
 ```
 
-nghĩa là copy sai URL. Phải copy `HTTP POST URL` trong trigger, URL phải có `sig=`.
+thì bạn copy sai URL. Phải dùng `HTTP POST URL` trong trigger, URL phải có `sig=`.
 
-## Power Automate 2: Member Hỏi Nhanh
+## 11. Power Automate Flow Member Hỏi Nhanh
 
-Flow này ghi command Teams vào `tracking_commands.xlsx`.
+Flow này ghi command vào `tracking_commands.xlsx`.
 
-### Bước 1
-
-Create flow mới.
-
-Trigger chọn Teams trigger mà tenant cho phép, ví dụ:
-
-```text
-When a new message is added in a chat or channel
-```
-
-Chọn group chat/channel đang dùng.
-
-### Bước 2
-
-Thêm Condition:
+1. Trigger Teams: `When a new message is added in a chat or channel`.
+2. Chọn group chat/channel.
+3. Condition:
 
 ```text
 Message starts with check
@@ -352,23 +327,13 @@ OR
 Message starts with report
 ```
 
-Nếu muốn đơn giản, chỉ dùng format:
-
-```text
-check Lion
-check Cat
-report Tiger
-```
-
-### Bước 3
-
-Trong nhánh `Yes`, add action:
+4. Nhánh Yes -> action:
 
 ```text
 Excel Online (Business) -> Add a row into a table
 ```
 
-Chọn:
+5. Chọn:
 
 ```text
 Location: OneDrive for Business
@@ -377,7 +342,7 @@ File: tracking_commands.xlsx
 Table: TrackingCommandsTable
 ```
 
-Map column:
+6. Map column:
 
 ```text
 ID           = concat('CMD-', formatDateTime(utcNow(),'yyyyMMdd-HHmmss'))
@@ -389,32 +354,26 @@ CreatedAt    = formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard T
 TeamsMessage = message body/content
 ```
 
-Máy common sẽ đọc row `Status = pending`, trả lời xong thì đổi thành `done`.
-
-## Power Automate 3: Urgent Task
+## 12. Power Automate Flow Urgent
 
 Flow này ghi urgent task vào `urgent_tasks.xlsx`.
 
-Member nhắn:
+1. Trigger Teams: `When a new message is added in a chat or channel`.
+2. Condition:
 
 ```text
-urgent|Cat|3|support customer issue ABC
-urgent|Tiger|2|hotfix integration build
+Message starts with urgent|
 ```
 
-Nên dùng format có dấu `|` cho dễ parse.
-
-Flow:
+3. Nhánh Yes -> action:
 
 ```text
-Trigger: new Teams message
-Condition: message starts with urgent|
-Action: Excel Online (Business) -> Add a row into a table
+Excel Online (Business) -> Add a row into a table
 File: urgent_tasks.xlsx
 Table: UrgentTasksTable
 ```
 
-Map column:
+4. Map column:
 
 ```text
 ID         = concat('U-', formatDateTime(utcNow(),'yyyyMMdd-HHmmss'))
@@ -429,136 +388,28 @@ Source     = teams
 CreatedAt  = formatDateTime(convertTimeZone(utcNow(),'UTC','SE Asia Standard Time'),'yyyy-MM-dd HH:mm')
 ```
 
-Khi muốn check impact:
+## 13. Khi File Tracking Đang Bị Mở
 
-```powershell
-python main.py --config config.yaml --urgent-impact-only --no-ollama
-```
-
-Hoặc double-click:
-
-```text
-RUN_URGENT_IMPACT.bat
-```
-
-## Ollama Có Cần Không?
-
-Không bắt buộc.
-
-Khuyến nghị máy common:
-
-```yaml
-ollama:
-  enabled: false
-```
-
-Lý do:
-
-- Rule-based đủ cho daily control.
-- Command inbox chạy mỗi phút nên không nên gọi LLM.
-- Không có pending command thì script thoát nhanh.
-- Ollama có thể tốn RAM/CPU nếu chạy model lớn.
-
-Chỉ bật Ollama khi cần review sâu:
-
-```powershell
-python main.py --config config.yaml --with-ollama
-```
-
-## Khi Excel Tracking Đang Bị Người Khác Mở
-
-Tool xử lý như sau:
+Tool không đọc trực tiếp file gốc. Luồng xử lý:
 
 ```text
 1. Check folder OneDrive.
 2. Check file tracking tồn tại.
 3. Check lock file ~$...
-4. Copy source Excel sang temp.
+4. Copy file tracking sang temp.
 5. Nếu file bị lock, retry.
-6. Nếu vẫn bị lock, dùng last-good snapshot.
+6. Nếu vẫn lock, dùng last-good snapshot.
 ```
 
-Snapshot nằm ở:
+Lần đầu nên chạy lúc Excel không bị lock để tạo snapshot.
+
+## 14. Chỉnh Report Ở Đâu
 
 ```text
-temp/source_snapshots
-```
-
-Lần chạy đầu tiên nên chạy lúc file Excel không bị lock để tạo snapshot đầu tiên.
-
-## Command Hay Dùng
-
-Daily report, không gửi Teams:
-
-```powershell
-python main.py --config config.yaml --dry-run --no-ollama
-```
-
-Daily report, gửi Teams:
-
-```powershell
-python main.py --config config.yaml --no-ollama
-```
-
-Hỏi nhanh 1 member:
-
-```powershell
-python main.py --config config.yaml --ask "check Lion" --no-ollama
-python main.py --config config.yaml --ask "check huytq136" --no-ollama
-python main.py --config config.yaml --pic Lion --pic Cat --no-ollama
-```
-
-Trên máy common nên để:
-
-```yaml
-user:
-  my_pic_names: []
-```
-
-Như vậy daily report là team view. Ai muốn test thì dùng `check <PIC>` hoặc `--pic <PIC>`, không cần hardcode tên trong config.
-
-Xử lý command inbox:
-
-```powershell
-python main.py --config config.yaml --process-command-inbox --no-ollama
-```
-
-Urgent impact:
-
-```powershell
-python main.py --config config.yaml --urgent-impact-only --no-ollama
-```
-
-## Chỉnh Report Ở Đâu
-
-Teams summary và full report:
-
-```text
-modules/report_builder.py
-```
-
-Member quick answer:
-
-```text
-modules/query_engine.py
-```
-
-Urgent impact:
-
-```text
-modules/urgent_impact_analyzer.py
-```
-
-Rule check:
-
-```text
-modules/rule_checker.py
-modules/workload_analyzer.py
-modules/estimate_analyzer.py
-```
-
-Ollama prompt:
-
-```text
-modules/ollama_reviewer.py
+modules/report_builder.py          Daily Teams summary + Markdown/Excel report
+modules/query_engine.py            Câu trả lời check Lion/check Cat
+modules/urgent_impact_analyzer.py  Urgent/OT impact
+modules/rule_checker.py            Rule schedule/progress/data quality
+modules/workload_analyzer.py       Workload >8h/>40h
+modules/estimate_analyzer.py       Estimate sanity
 ```

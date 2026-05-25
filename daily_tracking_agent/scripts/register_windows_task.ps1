@@ -6,7 +6,7 @@ param(
 
 if (-not $RunScript) {
     $AgentDir = Split-Path -Parent $PSScriptRoot
-    $RunScript = Join-Path $AgentDir "scripts\run_daily_with_ollama.ps1"
+    $RunScript = Join-Path $AgentDir "scripts\run_daily_tracking_agent.ps1"
 }
 
 $Action = New-ScheduledTaskAction `

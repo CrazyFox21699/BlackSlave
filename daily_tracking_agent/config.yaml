@@ -70,13 +70,6 @@ report:
   include_raw_issue_table: false
   write_excel: true
 
-ollama:
-  enabled: false
-  base_url: "http://localhost:11434"
-  model: "qwen2.5:7b"
-  timeout_seconds: 60
-  max_rows_for_ai_review: 20
-
 teams:
   enabled: false
   webhook_url: "PASTE_POWER_AUTOMATE_OR_TEAMS_WORKFLOW_WEBHOOK_URL"
