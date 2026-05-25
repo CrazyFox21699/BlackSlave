@@ -55,15 +55,15 @@ def build_daily_brief(prioritized_df: pd.DataFrame, issues: list[Issue], today: 
 
 def build_member_report(pics: list[str], prioritized_df: pd.DataFrame, issues: list[Issue], today: datetime, capacity: dict | None = None) -> str:
     daily_capacity = float((capacity or {}).get("daily_mh", 8))
-    normalized = {p.lower(): p for p in pics}
-    mask = prioritized_df["PIC"].astype(str).str.lower().isin(normalized)
+    normalized = {_pic_key(p): p for p in pics}
+    mask = prioritized_df["PIC"].apply(_pic_key).isin(normalized)
     member_df = prioritized_df[mask & (prioritized_df["CurrentProgress"] < 100)].sort_values("PriorityScore", ascending=False)
     member_issues = [i for i in issues if (i.pic or "").lower() in normalized]
 
     lines = [f"Quick work check - {', '.join(pics)} - {today.strftime('%Y-%m-%d')}"]
     for pic in pics:
-        pic_df = member_df[member_df["PIC"].astype(str).str.lower() == pic.lower()]
-        pic_issues = [i for i in member_issues if (i.pic or "").lower() == pic.lower()]
+        pic_df = member_df[member_df["PIC"].apply(_pic_key) == _pic_key(pic)]
+        pic_issues = [i for i in member_issues if _pic_key(i.pic) == _pic_key(pic)]
         high = [i for i in pic_issues if i.severity in {"Critical", "High"}]
         due = pic_df[pic_df["DaysToDue"].fillna(999) <= 0]
         today_scope = pic_df[(pic_df["DaysToDue"].fillna(999) <= 0) | (pic_df["PriorityScore"] >= 60)].copy()
@@ -108,8 +108,12 @@ def member_actions_for_teams(prioritized_df: pd.DataFrame, limit_pics: int = 6, 
 
 def _extract_pics(question: str, df: pd.DataFrame) -> list[str]:
     text = question.lower()
+    compact_text = _pic_key(question)
     pics = sorted({str(pic).strip() for pic in df["PIC"].dropna().unique() if str(pic).strip()})
-    return [pic for pic in pics if re.search(rf"\b{re.escape(pic.lower())}\b", text)]
+    return [
+        pic for pic in pics
+        if re.search(rf"\b{re.escape(pic.lower())}\b", text) or _pic_key(pic) in compact_text
+    ]
 
 
 def _looks_member_question(question: str) -> bool:
@@ -179,3 +183,7 @@ def _due_text(value: object) -> str:
     if days == 0:
         return "due today"
     return f"due in {days}d"
+
+
+def _pic_key(value: object) -> str:
+    return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())

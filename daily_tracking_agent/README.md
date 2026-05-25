@@ -136,6 +136,12 @@ Test hỏi nhanh:
 python main.py --config config.yaml --ask "check Lion" --no-ollama
 ```
 
+Xem tool đang đọc được PIC nào trong file thật:
+
+```powershell
+python main.py --config config.yaml --list-pics --dry-run --no-ollama
+```
+
 Test command inbox:
 
 ```powershell
@@ -495,6 +501,15 @@ Hỏi nhanh 1 member:
 
 ```powershell
 python main.py --config config.yaml --ask "check Lion" --no-ollama
+```
+
+Nếu tên bạn trong cột PIC là `huytq136`, config cần có:
+
+```yaml
+user:
+  my_pic_names:
+    - "huytq136"
+    - "HuyTQ136"
 ```
 
 Xử lý command inbox:

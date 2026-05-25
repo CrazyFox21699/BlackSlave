@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--send-answer-to-teams", action="store_true", help="Send --ask/--pic answer to Teams webhook.")
     parser.add_argument("--urgent-impact-only", action="store_true", help="Send/print short urgent impact update instead of full report.")
     parser.add_argument("--process-command-inbox", action="store_true", help="Process pending Teams commands from command_inbox.file.")
+    parser.add_argument("--list-pics", action="store_true", help="Print PIC names detected from the tracking file and exit.")
     return parser.parse_args()
 
 
@@ -107,6 +108,10 @@ def main() -> int:
         if args.send_answer_to_teams:
             send_teams_message(answer, config.get("teams", {}), logger, force_disabled=args.no_teams or args.dry_run)
         logger.info("Answered local tracking question")
+        return 0
+
+    if args.list_pics:
+        print_detected_pics(result["prioritized_df"], config)
         return 0
 
     if args.urgent_impact_only:
@@ -245,6 +250,19 @@ def process_command_inbox(config: dict, today: datetime, logger, dry_run: bool =
 def _command_response_message(command, answer: str) -> str:
     requested_by = f" for {command.requested_by}" if command.requested_by else ""
     return f"Tracking quick answer{requested_by}\nCommand: {command.command}\n\n{answer}"
+
+
+def print_detected_pics(prioritized_df: pd.DataFrame, config: dict) -> None:
+    pics = sorted({str(v).strip() for v in prioritized_df["PIC"].dropna().unique() if str(v).strip()})
+    configured = config.get("user", {}).get("my_pic_names", [])
+    print("Detected PIC values:")
+    for pic in pics:
+        count = int((prioritized_df["PIC"].astype(str).str.strip() == pic).sum())
+        print(f"- {pic}: {count} row(s)")
+    print("")
+    print("Configured my_pic_names:")
+    for name in configured:
+        print(f"- {name}")
 
 
 def _schema_issues(missing: list[str]) -> list[Issue]:

@@ -86,9 +86,9 @@ def calculate_priorities(df: pd.DataFrame, issues: list[Issue], my_pic_names: li
     result["PriorityScore"] = scores
     result["PriorityClass"] = result["PriorityScore"].apply(_priority_class)
 
-    my_names = {n.strip().lower() for n in my_pic_names}
+    my_names = {_pic_key(n) for n in my_pic_names if str(n).strip()}
     active = result[(result["CurrentProgress"] < 100) & result.apply(lambda r: _active_or_due(r, today), axis=1)].copy()
-    my_focus = active[active["PIC"].astype(str).str.lower().isin(my_names)].sort_values("PriorityScore", ascending=False)
+    my_focus = active[active["PIC"].apply(_pic_key).isin(my_names)].sort_values("PriorityScore", ascending=False)
     team_actions = active[
         (active["DaysToDue"].fillna(999) <= 0) | (active["PriorityClass"].isin(["High", "Critical"]))
     ].sort_values(["PIC", "PriorityScore"], ascending=[True, False])
@@ -136,3 +136,7 @@ def _dedupe(values: list[str]) -> list[str]:
         if value and value not in out:
             out.append(value)
     return out
+
+
+def _pic_key(value: object) -> str:
+    return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())
