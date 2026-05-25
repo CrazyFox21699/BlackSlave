@@ -261,8 +261,11 @@ def print_detected_pics(prioritized_df: pd.DataFrame, config: dict) -> None:
         print(f"- {pic}: {count} row(s)")
     print("")
     print("Configured my_pic_names:")
-    for name in configured:
-        print(f"- {name}")
+    if configured:
+        for name in configured:
+            print(f"- {name}")
+    else:
+        print("- <empty: common/team mode>")
 
 
 def _schema_issues(missing: list[str]) -> list[Issue]:

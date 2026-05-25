@@ -25,12 +25,9 @@ excel:
     - Note
 
 user:
-  my_pic_names:
-    - "huytq136"
-    - "HuyTQ136"
-    - "Huy"
-    - "Huy Truong"
-    - "Truong Huy"
+  # Optional. Leave empty on a common/team PC.
+  # Team members can still use Teams commands such as "check Lion" or "check huytq136".
+  my_pic_names: []
 
 capacity:
   daily_mh: 8

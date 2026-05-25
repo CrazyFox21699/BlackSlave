@@ -86,9 +86,12 @@ def calculate_priorities(df: pd.DataFrame, issues: list[Issue], my_pic_names: li
     result["PriorityScore"] = scores
     result["PriorityClass"] = result["PriorityScore"].apply(_priority_class)
 
-    my_names = {_pic_key(n) for n in my_pic_names if str(n).strip()}
     active = result[(result["CurrentProgress"] < 100) & result.apply(lambda r: _active_or_due(r, today), axis=1)].copy()
-    my_focus = active[active["PIC"].apply(_pic_key).isin(my_names)].sort_values("PriorityScore", ascending=False)
+    my_names = {_pic_key(n) for n in my_pic_names if str(n).strip()}
+    if my_names:
+        my_focus = active[active["PIC"].apply(_pic_key).isin(my_names)].sort_values("PriorityScore", ascending=False)
+    else:
+        my_focus = active.sort_values("PriorityScore", ascending=False).head(0)
     team_actions = active[
         (active["DaysToDue"].fillna(999) <= 0) | (active["PriorityClass"].isin(["High", "Critical"]))
     ].sort_values(["PIC", "PriorityScore"], ascending=[True, False])

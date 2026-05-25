@@ -58,7 +58,7 @@ def build_member_report(pics: list[str], prioritized_df: pd.DataFrame, issues: l
     normalized = {_pic_key(p): p for p in pics}
     mask = prioritized_df["PIC"].apply(_pic_key).isin(normalized)
     member_df = prioritized_df[mask & (prioritized_df["CurrentProgress"] < 100)].sort_values("PriorityScore", ascending=False)
-    member_issues = [i for i in issues if (i.pic or "").lower() in normalized]
+    member_issues = [i for i in issues if _pic_key(i.pic) in normalized]
 
     lines = [f"Quick work check - {', '.join(pics)} - {today.strftime('%Y-%m-%d')}"]
     for pic in pics:

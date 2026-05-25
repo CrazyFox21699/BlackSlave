@@ -43,15 +43,20 @@ def build_teams_summary(
     confidence, confidence_reason = _report_confidence(issues)
     overloaded = _overloaded_pics(workload)
     member_lines = member_actions_for_teams(prioritized_df, limit_pics=5, limit_tasks_per_pic=1)
+    has_personal_focus = my_focus is not None and not my_focus.empty
 
     lines = [
         f"Daily tracking - {context.today.strftime('%Y-%m-%d')}",
         f"Rows {context.row_count} | High {len(high)} | Due/overdue {len(due_overdue)} | Overloaded {len(overloaded)} | Confidence {confidence}",
         f"Source: {source_time} ({confidence_reason})",
         "",
-        "My focus",
+        "My focus" if has_personal_focus else "Team focus",
     ]
-    lines.extend(_task_lines(my_focus, min(int(report_config.get("max_my_focus_items", 3)), 3)) or ["- No active high-priority personal focus item found."])
+    focus_df = my_focus if has_personal_focus else prioritized_df[
+        (prioritized_df["CurrentProgress"] < 100)
+        & ((prioritized_df["DaysToDue"].fillna(999) <= 2) | (prioritized_df["PriorityClass"].isin(["High", "Critical"])))
+    ].sort_values("PriorityScore", ascending=False)
+    lines.extend(_task_lines(focus_df, min(int(report_config.get("max_my_focus_items", 3)), 3)) or ["- No active high-priority focus item found."])
     lines.append("")
     lines.append("Members")
     lines.extend(member_lines or ["- No urgent member action found."])

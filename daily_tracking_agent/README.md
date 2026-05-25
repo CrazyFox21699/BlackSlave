@@ -79,6 +79,9 @@ urgent:
 command_inbox:
   file: "C:/Users/HuyTQ136/.../02_Project_Plan/tracking_commands.xlsx"
 
+user:
+  my_pic_names: []
+
 teams:
   enabled: true
   webhook_url: "PASTE_POWER_AUTOMATE_HTTP_POST_URL_CO_SIG"
@@ -501,16 +504,18 @@ Hỏi nhanh 1 member:
 
 ```powershell
 python main.py --config config.yaml --ask "check Lion" --no-ollama
+python main.py --config config.yaml --ask "check huytq136" --no-ollama
+python main.py --config config.yaml --pic Lion --pic Cat --no-ollama
 ```
 
-Nếu tên bạn trong cột PIC là `huytq136`, config cần có:
+Trên máy common nên để:
 
 ```yaml
 user:
-  my_pic_names:
-    - "huytq136"
-    - "HuyTQ136"
+  my_pic_names: []
 ```
+
+Như vậy daily report là team view. Ai muốn test thì dùng `check <PIC>` hoặc `--pic <PIC>`, không cần hardcode tên trong config.
 
 Xử lý command inbox:
 
