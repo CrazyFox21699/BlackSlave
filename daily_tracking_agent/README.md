@@ -403,7 +403,237 @@ Tool không đọc trực tiếp file gốc. Luồng xử lý:
 
 Lần đầu nên chạy lúc Excel không bị lock để tạo snapshot.
 
-## 14. Chỉnh Report Ở Đâu
+## 14. Define Rule Report
+
+Tool đang dùng rule-based. Muốn đổi cách đánh giá report thì sửa các file dưới đây.
+
+### 14.1. Thế Nào Là Trễ
+
+File:
+
+```text
+modules/rule_checker.py
+```
+
+Rule hiện tại:
+
+```python
+if EndDatePlan < today and CurrentProgress < 100:
+    issue = "Overdue"
+
+if EndDatePlan == today and CurrentProgress < 100:
+    issue = "Due today not completed"
+```
+
+Nghĩa là:
+
+- quá ngày plan end mà progress chưa 100% -> trễ,
+- hôm nay là due date mà chưa 100% -> cần follow hôm nay.
+
+Muốn nới rule, ví dụ chỉ xem là trễ nếu quá hạn hơn 1 ngày:
+
+```python
+if EndDatePlan < today - 1 day and CurrentProgress < 100:
+```
+
+Trong code thực tế dùng `pd.Timedelta(days=1)`.
+
+### 14.2. Near Deadline
+
+File:
+
+```text
+modules/rule_checker.py
+```
+
+Rule hiện tại:
+
+```python
+if 0 <= DaysToDue <= 2 and CurrentProgress < 50:
+    issue = "Near deadline with low progress"
+```
+
+Muốn chỉ cảnh báo sát hơn:
+
+```python
+0 <= DaysToDue <= 1
+```
+
+Muốn cảnh báo sớm hơn:
+
+```python
+0 <= DaysToDue <= 3
+```
+
+Muốn progress dưới 70% mới cảnh báo:
+
+```python
+CurrentProgress < 70
+```
+
+### 14.3. Quá Tải Trong Ngày
+
+File:
+
+```text
+config.yaml
+modules/workload_analyzer.py
+modules/report_builder.py
+```
+
+Ngưỡng mặc định:
+
+```yaml
+capacity:
+  daily_mh: 8
+  weekly_mh: 40
+```
+
+Nếu muốn ngày chỉ tính 7h productive:
+
+```yaml
+capacity:
+  daily_mh: 7
+```
+
+Report sẽ báo `OVER` nếu effort hôm nay của PIC vượt `daily_mh`.
+
+### 14.4. Nhiều Task Song Song
+
+File:
+
+```text
+modules/workload_analyzer.py
+```
+
+Rule hiện tại:
+
+```python
+if ActiveTasks >= 5:
+    issue = "Too many parallel tasks"
+```
+
+Nếu team bạn thấy 4 task/người đã quá nhiều:
+
+```python
+if ActiveTasks >= 4:
+```
+
+### 14.5. Estimate Quá Nhỏ / Quá Lớn
+
+File:
+
+```text
+config.yaml
+modules/estimate_analyzer.py
+modules/rule_checker.py
+```
+
+Baseline nằm trong `config.yaml`:
+
+```yaml
+estimate_baseline:
+  Code:
+    min_mh: 4
+    max_mh: 40
+    keywords: ["code", "implementation", "implement", "feature"]
+```
+
+Nghĩa là task có keyword `code/implementation/...`:
+
+- Est < 4h -> possible underestimate,
+- Est > 40h -> possible overestimate / aggregated scope.
+
+Muốn phù hợp project hơn thì sửa `min_mh`, `max_mh`, `keywords`.
+
+### 14.6. Task Quá Lớn Nên Split
+
+File:
+
+```text
+modules/rule_checker.py
+```
+
+Rule hiện tại:
+
+```python
+if Est >= 16:
+    issue = "Task too large"
+
+if Est >= 40:
+    Severity = High
+```
+
+Nếu tracking của bạn thường dùng task lớn hơn, có thể đổi `16` thành `24`.
+
+### 14.7. Data Quality Để Cuối Report
+
+File:
+
+```text
+modules/report_builder.py
+```
+
+Các issue như:
+
+```text
+Missing PIC
+Invalid planning date
+Delta mismatch
+```
+
+đang được đưa xuống section:
+
+```text
+Data Quality Backlog
+```
+
+Nếu muốn ẩn bớt data quality khỏi Teams summary, chỉnh hàm:
+
+```python
+build_teams_summary()
+```
+
+và bỏ block:
+
+```python
+Data quality later
+```
+
+### 14.8. Thứ Tự Hiển Thị Report
+
+File:
+
+```text
+modules/report_builder.py
+```
+
+Teams summary nằm ở:
+
+```python
+build_teams_summary()
+```
+
+Full `.md` nằm ở:
+
+```python
+_full_markdown()
+```
+
+Thứ tự hiện tại:
+
+```text
+Team load today
+Today focus
+PM load check
+Delay
+Urgent/OT
+Data quality later
+```
+
+Muốn đổi thứ tự thì đổi list `lines` trong `build_teams_summary()`.
+
+## 15. Chỉnh Report Ở Đâu
 
 ```text
 modules/report_builder.py          Daily Teams summary + Markdown/Excel report
